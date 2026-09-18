@@ -495,7 +495,11 @@ export function isLang(v: unknown): v is Lang {
   return typeof v === 'string' && (LANGS as string[]).includes(v);
 }
 
-/** Picks the best supported language from an Accept-Language header (RFC 9110 q-values). */
+/**
+ * Picks the UI language from Accept-Language: Polish only when it is the browser's
+ * top-ranked language; anything else (German, French, unknown…) gets English, which
+ * such users are far more likely to read than a secondary Polish entry deep in their list.
+ */
 export function negotiateLang(acceptLanguage: string | undefined): Lang {
   if (!acceptLanguage) return DEFAULT_LANG;
   const ranked = acceptLanguage
@@ -507,12 +511,8 @@ export function negotiateLang(acceptLanguage: string | undefined): Lang {
     })
     .filter((e) => e.tag && e.q > 0)
     .sort((a, b) => b.q - a.q || a.index - b.index);
-  for (const { tag } of ranked) {
-    const base = tag.split('-')[0]!;
-    if (isLang(base)) return base;
-    if (tag === '*') return DEFAULT_LANG;
-  }
-  return DEFAULT_LANG;
+  const top = ranked[0]?.tag.split('-')[0];
+  return isLang(top) ? top : DEFAULT_LANG;
 }
 
 /** Strings the browser-side upload script needs, already in the right language. */

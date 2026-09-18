@@ -7,8 +7,10 @@ describe('language negotiation', () => {
     expect(negotiateLang(undefined)).toBe('en');
     expect(negotiateLang('pl')).toBe('pl');
     expect(negotiateLang('pl-PL,pl;q=0.9,en-US;q=0.8')).toBe('pl');
-    expect(negotiateLang('de-DE,de;q=0.9,pl;q=0.7')).toBe('pl');
+    // Only the browser's primary language counts: a German user with Polish as a fallback still gets English.
+    expect(negotiateLang('de-DE,de;q=0.9,pl;q=0.7')).toBe('en');
     expect(negotiateLang('de-DE,de;q=0.9')).toBe('en');
+    expect(negotiateLang('pl,de;q=0.8')).toBe('pl');
     expect(negotiateLang('en-GB;q=0.5, pl;q=0.9')).toBe('pl');
     expect(negotiateLang('pl;q=0, en')).toBe('en');
     expect(negotiateLang('*')).toBe('en');

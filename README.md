@@ -13,9 +13,9 @@ no self-registration.
   `tus-js-client`). No native modules.
 - **Deployment:** one container + one volume; optional MinIO profile for S3 testing.
 - **Admin 2FA:** TOTP (RFC 6238) with recovery codes, optionally enforced for every admin.
-- **UI languages:** English and Polish. The language is picked per request from the
-  browser's `Accept-Language`; a footer switcher (EN | PL) stores an explicit choice in a
-  cookie. API error messages follow the same language.
+- **UI languages:** English and Polish. Polish is used when it is the browser's primary
+  language (`Accept-Language`), English in every other case; a footer switcher (EN | PL)
+  stores an explicit choice in a cookie. API error messages follow the same language.
 
 ---
 
