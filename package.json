@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Self-hosted private file drop box: admins create cases and upload links, external parties upload files they cannot read back.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=24"

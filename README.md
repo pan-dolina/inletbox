@@ -530,4 +530,4 @@ The same checks run in GitHub Actions on every push.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+Apache License 2.0, see [LICENSE](LICENSE).
