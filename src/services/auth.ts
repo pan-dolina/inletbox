@@ -57,6 +57,15 @@ export function setAdminPassword(db: Db, username: string, password: string): bo
   return res.changes > 0;
 }
 
+/** Self-service change: requires the current password. Ends every other session of this admin on success. */
+export function changeAdminPassword(db: Db, adminId: string, currentPassword: string, newPassword: string): boolean {
+  if (newPassword.length < MIN_PASSWORD_LENGTH) throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+  const admin = adminRow(db, 'id', adminId);
+  if (!admin || !verifyPassword(currentPassword, admin.password_hash)) return false;
+  db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hashPassword(newPassword), admin.id);
+  return true;
+}
+
 const DUMMY_HASH = hashPassword('dummy-password-for-timing');
 
 /** Always runs the password hash, so unknown usernames take as long as wrong passwords. */

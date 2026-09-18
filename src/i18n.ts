@@ -110,6 +110,18 @@ const en = {
   'security.msg.regenerated': 'New recovery codes generated.',
   'security.msg.required': 'This instance requires TOTP (ADMIN_REQUIRE_TOTP); it cannot be disabled.',
   'security.msg.disabled': 'Two-factor authentication has been disabled.',
+  'security.password.title': 'Change password',
+  'security.password.current': 'Current password',
+  'security.password.new': 'New password (min. 12 characters)',
+  'security.password.confirm': 'Confirm new password',
+  'security.password.submit': 'Change password',
+  'security.password.mismatch': 'The new password and its confirmation do not match.',
+  'security.password.invalid_current': 'The current password is incorrect.',
+  'security.password.changed': 'Password changed. Other sessions of this account have been logged out.',
+
+  // ---- home page (public root)
+  'home.title': 'inletbox',
+  'home.message': 'This is a private file drop box. To upload files, use the link you were given by the person who requested them.',
 
   // ---- cases
   'cases.new': 'New case',
@@ -342,6 +354,17 @@ const pl: Record<keyof typeof en, string> = {
   'security.msg.regenerated': 'Wygenerowano nowe kody zapasowe.',
   'security.msg.required': 'Ta instancja wymaga TOTP (ADMIN_REQUIRE_TOTP); nie można go wyłączyć.',
   'security.msg.disabled': 'Uwierzytelnianie dwuskładnikowe zostało wyłączone.',
+  'security.password.title': 'Zmiana hasła',
+  'security.password.current': 'Bieżące hasło',
+  'security.password.new': 'Nowe hasło (min. 12 znaków)',
+  'security.password.confirm': 'Potwierdź nowe hasło',
+  'security.password.submit': 'Zmień hasło',
+  'security.password.mismatch': 'Nowe hasło i jego potwierdzenie nie są zgodne.',
+  'security.password.invalid_current': 'Bieżące hasło jest nieprawidłowe.',
+  'security.password.changed': 'Hasło zostało zmienione. Inne sesje tego konta zostały wylogowane.',
+
+  'home.title': 'inletbox',
+  'home.message': 'To prywatna skrzynka do przesyłania plików. Aby przesłać pliki, skorzystaj z linku otrzymanego od osoby, która ich potrzebuje.',
 
   'cases.new': 'Nowa sprawa',
   'cases.name': 'Nazwa',

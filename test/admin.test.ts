@@ -16,6 +16,15 @@ describe('admin panel', () => {
     expect(dl.status).toBe(302);
   });
 
+  it('shows a placeholder on the public root instead of redirecting to the admin panel', async () => {
+    const res = await fetch(`${app.base}/`, { redirect: 'manual' });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('location')).toBeNull();
+    const body = await res.text();
+    expect(body).toContain('use the link you were given');
+    expect(body).not.toContain('/admin');
+  });
+
   it('creates a case and a link through the HTML forms, showing the full URL once', async () => {
     const s = await app.adminLogin();
     const created = await adminPost(app, s, '/admin/cases', { name: 'Audit <2026>', description: 'desc' });

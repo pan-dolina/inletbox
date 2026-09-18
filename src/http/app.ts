@@ -11,7 +11,7 @@ import type { AppContext } from './context.js';
 import { publicRouter } from './public.js';
 import { langCookie, languageMiddleware, requestLogger, securityHeaders, sessionMiddleware } from './middleware.js';
 import { isLang, t } from '../i18n.js';
-import { errorPage } from './views/admin.js';
+import { errorPage, homePage } from './views/admin.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -51,7 +51,7 @@ export function createApp(ctx: AppContext): Express {
     res.setHeader('Set-Cookie', langCookie(ctx, lang));
     res.redirect(303, safeNext);
   });
-  app.get('/', (_req, res) => { res.redirect('/admin'); });
+  app.get('/', (req, res) => { res.type('html').send(homePage(req.lang)); });
 
   app.use(sessionMiddleware(ctx));
   app.use('/admin', adminRouter(ctx));
@@ -62,7 +62,8 @@ export function createApp(ctx: AppContext): Express {
       res.status(404).json({ error: 'not_found' });
       return;
     }
-    const e = errorPage(req.lang, t(req.lang, 'error.not_found.title'), t(req.lang, 'error.page_missing'), 404, req.originalUrl);
+    const homeHref = req.path.startsWith('/admin') ? '/admin' : '/';
+    const e = errorPage(req.lang, t(req.lang, 'error.not_found.title'), t(req.lang, 'error.page_missing'), 404, req.originalUrl, homeHref);
     res.status(e.status).type('html').send(e.body);
   });
 
@@ -76,7 +77,8 @@ export function createApp(ctx: AppContext): Express {
       return;
     }
     const lang = req.lang ?? 'en';
-    const page = errorPage(lang, t(lang, status >= 500 ? 'error.server.title' : 'error.bad_request.title'), status >= 500 ? t(lang, 'error.server') : (e.message ?? 'Bad request'), status, req.originalUrl);
+    const homeHref = req.path.startsWith('/admin') ? '/admin' : '/';
+    const page = errorPage(lang, t(lang, status >= 500 ? 'error.server.title' : 'error.bad_request.title'), status >= 500 ? t(lang, 'error.server') : (e.message ?? 'Bad request'), status, req.originalUrl, homeHref);
     res.status(page.status).type('html').send(page.body);
   });
 

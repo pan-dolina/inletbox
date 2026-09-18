@@ -31,6 +31,15 @@ function flash(msg?: string, kind: 'error' | 'ok' = 'error'): SafeHtml {
   return msg ? html`<div class="flash flash-${kind}">${msg}</div>` : html``;
 }
 
+/** Public root: no case/link context here, so there is nothing useful to show or redirect to. */
+export function homePage(lang: Lang): string {
+  const t = translator(lang);
+  return layout({
+    lang, title: t('home.title'), path: '/',
+    body: html`<section class="card narrow"><h1>${t('home.title')}</h1><p>${t('home.message')}</p></section>`,
+  });
+}
+
 export function loginPage(lang: Lang, opts: { error?: string }): string {
   const t = translator(lang);
   return layout({
@@ -202,9 +211,9 @@ export function auditPage(v: AdminViewContext, rows: AuditRow[]): string {
   });
 }
 
-export function errorPage(lang: Lang, title: string, message: string, status = 404, path = '/'): { status: number; body: string } {
+export function errorPage(lang: Lang, title: string, message: string, status = 404, path = '/', homeHref = '/'): { status: number; body: string } {
   const t = translator(lang);
-  return { status, body: layout({ lang, title, path, body: html`<section class="card narrow"><h1>${title}</h1><p>${message}</p><p><a href="/">${t('common.home')}</a></p></section>` }) };
+  return { status, body: layout({ lang, title, path, body: html`<section class="card narrow"><h1>${title}</h1><p>${message}</p><p><a href="${homeHref}">${t('common.home')}</a></p></section>` }) };
 }
 
 export { raw };

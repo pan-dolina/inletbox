@@ -7,8 +7,8 @@ import { ID_RE } from '../crypto.js';
 import { log } from '../log.js';
 import { audit, listAudit } from '../services/audit.js';
 import {
-  authenticate, beginTotpEnrolment, confirmTotpEnrolment, createSession, destroyOtherSessions, destroySession, disableTotp,
-  MAX_TOTP_ATTEMPTS, pendingTotpSecret, regenerateRecoveryCodes, remainingRecoveryCodes, totpLockedUntil, verifySessionTotp,
+  authenticate, beginTotpEnrolment, changeAdminPassword, confirmTotpEnrolment, createSession, destroyOtherSessions, destroySession,
+  disableTotp, MAX_TOTP_ATTEMPTS, pendingTotpSecret, regenerateRecoveryCodes, remainingRecoveryCodes, totpLockedUntil, verifySessionTotp,
 } from '../services/auth.js';
 import { createCase, getCase, listCases, updateCase } from '../services/cases.js';
 import { discardUploadData } from '../services/cleanup.js';
@@ -28,7 +28,7 @@ function viewCtx(req: Request): AdminViewContext {
 }
 
 function sendError(req: Request, res: Response, titleKey: MessageKey, messageKey: MessageKey, status = 404): void {
-  const e = errorPage(req.lang, t(req.lang, titleKey), t(req.lang, messageKey), status, req.originalUrl);
+  const e = errorPage(req.lang, t(req.lang, titleKey), t(req.lang, messageKey), status, req.originalUrl, '/admin');
   res.status(e.status).type('html').send(e.body);
 }
 
@@ -145,6 +145,27 @@ export function adminRouter(ctx: AppContext): Router {
   }
 
   r.get('/security', (req, res, next) => { renderSecurity(req, res).catch(next); });
+
+  r.post('/security/password', (req, res, next) => {
+    const session = req.session!;
+    const newPassword = field(req, 'new_password');
+    if (newPassword !== field(req, 'new_password_confirm')) {
+      renderSecurity(req, res, { error: t(req.lang, 'security.password.mismatch') }, 400).catch(next);
+      return;
+    }
+    try {
+      if (!changeAdminPassword(ctx.db, session.admin.id, field(req, 'current_password'), newPassword)) {
+        renderSecurity(req, res, { error: t(req.lang, 'security.password.invalid_current') }, 400).catch(next);
+        return;
+      }
+    } catch (err) {
+      renderSecurity(req, res, { error: (err as Error).message }, 400).catch(next);
+      return;
+    }
+    destroyOtherSessions(ctx.db, session.admin.id, req.sessionId!);
+    audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.password_changed', ip: req.ip });
+    renderSecurity(req, res, { ok: t(req.lang, 'security.password.changed') }).catch(next);
+  });
 
   r.post('/security/totp/begin', (req, res, next) => {
     try {

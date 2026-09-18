@@ -55,6 +55,16 @@ export function securityPage(d: SecurityPageData): string {
         ${d.totpEnabled ? raw(t('security.recovery_left', { n: `<strong>${d.recoveryLeft}</strong>` })) : ''}</p>
       </section>
 
+      <section class="card">
+        <h2>${t('security.password.title')}</h2>
+        <form method="post" action="/admin/security/password" class="row">${csrf}
+          <label>${t('security.password.current')} <input name="current_password" type="password" required autocomplete="current-password"></label>
+          <label>${t('security.password.new')} <input name="new_password" type="password" required autocomplete="new-password" minlength="12"></label>
+          <label>${t('security.password.confirm')} <input name="new_password_confirm" type="password" required autocomplete="new-password" minlength="12"></label>
+          <button class="btn" type="submit">${t('security.password.submit')}</button>
+        </form>
+      </section>
+
       ${d.recoveryCodes ? html`<section class="card highlight">
         <h2>${t('security.recovery.title')}</h2>
         <p><strong>${t('security.recovery.intro').split('. ')[0]}.</strong> ${t('security.recovery.intro').split('. ').slice(1).join('. ')}</p>

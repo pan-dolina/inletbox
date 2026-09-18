@@ -90,7 +90,7 @@ ${b.logoPath ? html`<link rel="icon" href="/brand/logo">` : ''}
 <body data-copied="${t(opts.lang, 'common.copied')}" data-copy-manual="${t(opts.lang, 'common.copy_manual')}">
 <header class="topbar">
   <div class="topbar-inner">
-    <a class="brand" href="/">${b.logoPath ? html`<img class="brand-logo" src="/brand/logo" alt="${b.name}">` : b.name}</a>
+    <a class="brand" href="${opts.nav ? '/admin' : '/'}">${b.logoPath ? html`<img class="brand-logo" src="/brand/logo" alt="${b.name}">` : b.name}</a>
     ${opts.nav ?? ''}
   </div>
 </header>
