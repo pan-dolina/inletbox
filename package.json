@@ -1,0 +1,41 @@
+{
+  "name": "inletbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted private file drop box: admins create cases and upload links, external parties upload files they cannot read back.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --import tsx --watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env dist/server.js",
+    "cli": "node --env-file-if-exists=.env --import tsx src/cli.ts",
+    "test": "vitest run",
+    "test:s3": "TEST_S3=1 vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1135.0",
+    "@aws-sdk/lib-storage": "^3.1135.0",
+    "@tus/file-store": "^2.1.1",
+    "@tus/s3-store": "^2.0.6",
+    "@tus/server": "^2.4.5",
+    "content-disposition": "^1.0.0",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.3.0",
+    "helmet": "^8.1.0",
+    "qrcode": "^1.5.4",
+    "tus-js-client": "^4.3.1"
+  },
+  "devDependencies": {
+    "@types/content-disposition": "^0.5.9",
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "@types/qrcode": "^1.5.6",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}
