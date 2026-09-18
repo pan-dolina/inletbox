@@ -1,308 +1,315 @@
 # inletbox
 
-Prywatna, self‑hosted **skrzynka wrzutowa na pliki**. Administrator zakłada sprawę,
-generuje link, przekazuje go klientowi. Klient wrzuca pliki z przeglądarki lub przez
-`curl`, widzi wyłącznie listę plików przesłanych **swoim** linkiem i **nie może ich
-pobrać**. Pliki odbiera administrator.
+A private, self-hosted **file drop box**. An administrator creates a case, generates an
+upload link and hands it to a client. The client uploads files from the browser or with
+`curl`, sees only the list of files sent through **their own** link and **cannot download
+anything**. The administrator collects the files.
 
-To nie jest dysk sieciowy ani narzędzie do współdzielenia: brak podglądu, brak
-publicznego pobierania, brak rejestracji.
+This is not a network drive and not a sharing tool: no previews, no public downloads,
+no self-registration.
 
-- **Stack:** Node.js 24+ (TypeScript, Express 5), SQLite (`node:sqlite`, wbudowane),
-  storage lokalny lub S3/MinIO, wznawianie uploadów przez protokół **tus**
-  (`@tus/server` + `tus-js-client`). Zero natywnych modułów.
-- **Uruchomienie:** jeden kontener + wolumen; opcjonalnie MinIO do testów S3.
+- **Stack:** Node.js 24+ (TypeScript, Express 5), SQLite (built-in `node:sqlite`), local
+  disk or S3/MinIO storage, resumable uploads via the **tus** protocol (`@tus/server` +
+  `tus-js-client`). No native modules.
+- **Deployment:** one container + one volume; optional MinIO profile for S3 testing.
+- **Admin 2FA:** TOTP (RFC 6238) with recovery codes, optionally enforced for every admin.
+- **UI language:** the web interface is currently Polish (the admin panel and the public
+  upload page); the API, configuration, logs and this documentation are English.
 
 ---
 
-## Spis treści
+## Table of contents
 
-1. [Szybki start](#1-szybki-start)
-2. [Model uprawnień](#2-model-uprawnień)
-3. [Konfiguracja](#3-konfiguracja)
-4. [Upload z terminala (curl)](#4-upload-z-terminala-curl)
-5. [Wznawianie uploadów](#5-wznawianie-uploadów)
-6. [Limity i rezerwacje](#6-limity-i-rezerwacje)
+1. [Quick start](#1-quick-start)
+2. [Permission model](#2-permission-model)
+3. [Configuration](#3-configuration)
+4. [Uploading from the terminal (curl)](#4-uploading-from-the-terminal-curl)
+5. [Resumable uploads](#5-resumable-uploads)
+6. [Limits and reservations](#6-limits-and-reservations)
 7. [Storage](#7-storage)
 8. [Reverse proxy](#8-reverse-proxy)
-9. [Bezpieczeństwo](#9-bezpieczeństwo)
-10. [Architektura i model danych](#10-architektura-i-model-danych)
-11. [Testy](#11-testy)
-12. [Ograniczenia i dalsze kroki](#12-ograniczenia-i-dalsze-kroki)
+9. [Security](#9-security)
+10. [Architecture and data model](#10-architecture-and-data-model)
+11. [Tests](#11-tests)
+12. [Limitations and next steps](#12-limitations-and-next-steps)
 
 ---
 
-## 1. Szybki start
+## 1. Quick start
 
-### Docker Compose (zalecane)
+### Docker Compose (recommended)
 
 ```bash
 cp .env.example .env
-# ustaw PUBLIC_URL na adres, pod którym instancja będzie widoczna (https://drop.example.com)
+# set PUBLIC_URL to the address clients will use (https://drop.example.com)
 docker compose up -d --build
-docker compose exec app node dist/cli.js create-admin admin      # hasło pytane interaktywnie, min. 12 znaków
+docker compose exec app node dist/cli.js create-admin admin      # password prompted interactively, min. 12 characters
 ```
 
-Po pierwszym logowaniu włącz uwierzytelnianie dwuskładnikowe w panelu (**Bezpieczeństwo**)
-lub wymuś je dla wszystkich administratorów przez `ADMIN_REQUIRE_TOTP=true`.
+After the first login enable two-factor authentication in the panel (**Bezpieczeństwo** /
+Security) or enforce it for every administrator with `ADMIN_REQUIRE_TOTP=true`.
 
-Panel: `PUBLIC_URL/admin`. Dane (baza SQLite + pliki przy backendzie lokalnym) trafiają na
-wolumen `inletbox-data` zamontowany pod `/data`.
+Panel: `PUBLIC_URL/admin`. Data (the SQLite database and, with the local backend, the
+files) lives on the `inletbox-data` volume mounted at `/data`.
 
-Nie ma domyślnego hasła. Pierwszego administratora tworzy się wyłącznie przez CLI na
-serwerze (hasło można też podać na stdin: `echo "$PASS" | node dist/cli.js create-admin admin --password-stdin`).
-`reset-password <user>` zmienia hasło i unieważnia sesje tego administratora;
-`disable-totp <user>` zdejmuje drugi składnik, gdy administrator stracił aplikację i kody zapasowe.
+There is no default password. The first administrator is created only through the CLI on
+the server (the password can also be piped: `echo "$PASS" | node dist/cli.js create-admin admin --password-stdin`).
+`reset-password <user>` changes a password and ends that admin's sessions;
+`disable-totp <user>` removes the second factor when an admin has lost both the
+authenticator app and the recovery codes (it also ends all their sessions).
 
-### Lokalnie (dev)
+### Local development
 
 ```bash
 npm install
-cp .env.example .env            # dla http://localhost ustaw COOKIE_SECURE=false
+cp .env.example .env            # for http://localhost set COOKIE_SECURE=false
 npm run cli -- create-admin admin
 npm run dev                     # http://localhost:3000/admin
 ```
 
-### Testowy profil z MinIO
+### MinIO test profile
 
 ```bash
-docker compose --profile minio up -d           # MinIO + inicjalizacja prywatnego bucketa "inletbox"
-# w .env: STORAGE_BACKEND=s3  S3_ENDPOINT=http://minio:9000  S3_BUCKET=inletbox
-#         S3_ACCESS_KEY_ID=minioadmin  S3_SECRET_ACCESS_KEY=minioadmin  S3_FORCE_PATH_STYLE=true
+docker compose --profile minio up -d           # MinIO + creation of the private "inletbox" bucket
+# in .env: STORAGE_BACKEND=s3  S3_ENDPOINT=http://minio:9000  S3_BUCKET=inletbox
+#          S3_ACCESS_KEY_ID=minioadmin  S3_SECRET_ACCESS_KEY=minioadmin  S3_FORCE_PATH_STYLE=true
 docker compose up -d --build app
 ```
 
 ---
 
-## 2. Model uprawnień
+## 2. Permission model
 
-| Kto | Może | Nie może |
+| Who | Can | Cannot |
 |---|---|---|
-| **Administrator** (sesja cookie) | tworzyć/edytować/zamykać sprawy; generować i unieważniać linki, ustawiać ich ważność i limity; przeglądać metadane; pobierać i usuwać pliki; czytać dziennik zdarzeń | — |
-| **Posiadacz linku** (token) | przesyłać pliki (przeglądarka, curl, tus); widzieć listę i status plików przesłanych **tym** linkiem | pobierać ani podglądać jakichkolwiek plików, także własnych; usuwać lub nadpisywać ukończone pliki; widzieć pliki innych linków; wejść do panelu |
+| **Administrator** (cookie session, optional TOTP) | create/edit/close cases; generate and revoke links, set their expiry and limits; inspect metadata; download and delete files; read the audit log | — |
+| **Link holder** (token) | upload files (browser, curl, tus); see the list and status of files uploaded through **that** link | download or preview any file, including their own; delete or overwrite completed files; see files of other links; reach the admin panel |
 
-**Jeden case = wiele linków. Każdy link = osobny odbiorca i osobny zakres widoczności.**
-Aplikacja nie rozróżnia osób posługujących się tym samym linkiem: kto zna link, ten ma
-dokładnie ten sam dostęp (wysyłanie + lista własnych plików). Jeśli dwie osoby mają być
-rozdzielone, dostają dwa linki. Ta informacja jest też pokazana w panelu przy linkach.
+**One case = many links. Each link = one recipient and one visibility scope.**
+The application cannot tell apart people who use the same link: whoever knows the link has
+exactly the same access (uploading + listing their own files). If two people must be kept
+separate, they get two links. The panel states this next to the links.
 
-Zakaz pobierania jest egzekwowany w backendzie i storage, nie w UI:
+The no-download rule is enforced by the backend and the storage layout, not by the UI:
 
-- nie istnieje żaden endpoint zwracający treść pliku dla tokenu linku (`GET /api/files/:id`,
-  `GET /api/files/:id/download`, `DELETE /api/files/:id` odpowiadają `403` i są w testach);
-- endpoint tus odrzuca `GET` (`405`), więc nie działa jako endpoint odczytu;
-- pliki leżą poza katalogiem serwowanym statycznie (`DATA_DIR/files`), a bucket S3 jest
-  prywatny; aplikacja nie generuje presigned URL‑i;
-- klucz w storage to losowy identyfikator (`f_…`), nigdy nazwa podana przez klienta;
-- pobranie wymaga sesji administratora i odbywa się przez aplikację (streaming) jako
+- there is no endpoint that returns file contents for a link token (`GET /api/files/:id`,
+  `GET /api/files/:id/download`, `DELETE /api/files/:id` answer `403` and are covered by tests);
+- the tus endpoint refuses `GET` (`405`), so it cannot act as a read endpoint;
+- files live outside any statically served directory (`DATA_DIR/files`) and the S3 bucket
+  is private; the application never issues presigned URLs;
+- the storage key is a random identifier (`f_…`), never a client-supplied name;
+- downloading requires an admin session and streams through the application as
   `Content-Disposition: attachment`, `application/octet-stream`, `nosniff`, `CSP: sandbox`.
 
-Po ukończeniu uploadu tus usuwa metadane („sidecar”) w storage, więc ukończonego pliku
-nie da się już zaadresować przez `HEAD`/`PATCH`/`DELETE` (odpowiedź `410`).
+Once a tus upload completes, its bookkeeping object ("sidecar") is removed from storage, so
+a finished file can no longer be addressed via `HEAD`/`PATCH`/`DELETE` (`410`).
 
 ---
 
-## 3. Konfiguracja
+## 3. Configuration
 
-Wszystko przez zmienne środowiskowe (`.env.example` zawiera pełną listę; brak sekretów).
-Rozmiary: `1048576`, `500MB`, `2GB`, `512KiB` (jednostki binarne).
+Everything is configured through environment variables (`.env.example` lists them all;
+it contains no secrets). Sizes: `1048576`, `500MB`, `2GB`, `512KiB` (binary units).
 
-| Zmienna | Domyślnie | Opis |
+| Variable | Default | Description |
 |---|---|---|
-| `PUBLIC_URL` | `http://localhost:3000` | Publiczny adres instancji; buduje linki i komendy curl, ustala origin dla CSRF. |
-| `HOST`, `PORT` | `0.0.0.0`, `3000` | Adres nasłuchu. |
-| `TRUST_PROXY` | `false` | `true`/liczba hopów za reverse proxy (IP z `X-Forwarded-For` do rate limitingu i dziennika). |
-| `DATA_DIR` | `./data` | Baza SQLite (`inletbox.sqlite`) i pliki (`files/`). |
-| `STORAGE_BACKEND` | `local` | `local` lub `s3`. |
-| `LOCAL_STORAGE_DIR` | `$DATA_DIR/files` | Katalog plików (poza katalogami publicznymi). |
-| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE`, `S3_PART_SIZE` | — | Backend S3; `S3_FORCE_PATH_STYLE=true` dla MinIO; part ≥ 5MB. |
-| `MAX_FILE_SIZE` | `10GB` | Globalny limit pojedynczego pliku; limity per link nie mogą go przekroczyć. |
-| `UPLOAD_CHUNK_SIZE` | `32MB` | Rozmiar żądania PATCH w przeglądarce; musi mieścić się w limicie body reverse proxy. |
-| `INCOMPLETE_UPLOAD_TTL_HOURS` | `24` | Po tym czasie nieukończone uploady są usuwane, a rezerwacja zwalniana. |
-| `CLEANUP_INTERVAL_MINUTES` | `30` | Częstotliwość sprzątania w procesie aplikacji (`0` wyłącza; `node dist/cli.js cleanup` uruchamia ręcznie). |
-| `SESSION_TTL_HOURS` | `12` | Ważność sesji administratora. |
-| `ADMIN_REQUIRE_TOTP` | `false` | Wymusza włączenie TOTP: administrator bez drugiego składnika widzi tylko stronę „Bezpieczeństwo”. |
-| `COOKIE_SECURE` | auto (`https` → `true`) | `false` tylko dla lokalnego developmentu po HTTP. |
-| `LOGIN_RATE_LIMIT_PER_15MIN` | `10` | Nieudane logowania per IP. |
-| `TOKEN_FAILURE_RATE_LIMIT_PER_15MIN` | `30` | Nieudane próby użycia tokenu per IP (brute force). |
-| `PUBLIC_RATE_LIMIT_PER_MINUTE` | `600` | Ogólny limit żądań API per IP (w tym fragmenty tus). |
+| `PUBLIC_URL` | `http://localhost:3000` | Public address of the instance; used to build links and curl commands and as the CSRF origin. |
+| `HOST`, `PORT` | `0.0.0.0`, `3000` | Listen address. |
+| `TRUST_PROXY` | `false` | Number of reverse-proxy hops (usually `1`) or a list of proxy addresses/CIDRs; client IPs are then read from `X-Forwarded-For` for rate limiting and the audit log. `true` is refused because it would let clients forge their IP. |
+| `DATA_DIR` | `./data` | SQLite database (`inletbox.sqlite`) and files (`files/`). |
+| `STORAGE_BACKEND` | `local` | `local` or `s3`. |
+| `LOCAL_STORAGE_DIR` | `$DATA_DIR/files` | Directory for file objects (outside any public directory; must not contain the database). |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_FORCE_PATH_STYLE`, `S3_PART_SIZE` | — | S3 backend; `S3_FORCE_PATH_STYLE=true` for MinIO; part size ≥ 5MB. |
+| `MAX_FILE_SIZE` | `10GB` | Global per-file limit; per-link limits can only lower it. |
+| `UPLOAD_CHUNK_SIZE` | `32MB` | Size of one browser PATCH request; must fit the reverse proxy body limit. |
+| `INCOMPLETE_UPLOAD_TTL_HOURS` | `24` | Unfinished uploads older than this are removed and their reservation released. |
+| `CLEANUP_INTERVAL_MINUTES` | `30` | How often the in-process cleanup runs (`0` disables it; `node dist/cli.js cleanup` runs it manually). |
+| `SESSION_TTL_HOURS` | `12` | Admin session lifetime. |
+| `ADMIN_REQUIRE_TOTP` | `false` | Enforce TOTP: an admin without a second factor only sees the security page until they enrol. |
+| `COOKIE_SECURE` | auto (`https` → `true`) | `false` only for plain-HTTP local development. |
+| `LOGIN_RATE_LIMIT_PER_15MIN` | `10` | Failed logins (password or TOTP step) per IP. |
+| `TOKEN_FAILURE_RATE_LIMIT_PER_15MIN` | `30` | Unknown/unauthenticated token attempts per IP (brute force). |
+| `PUBLIC_RATE_LIMIT_PER_MINUTE` | `600` | General API request limit per IP (tus chunks included). |
+| `BRAND_NAME`, `BRAND_LOGO_PATH`, `BRAND_COLOR_*`, `BRAND_FOOTER_TEXT` | — | Branding, see below. |
 | `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error`. |
 
-Limity per link (rozmiar pliku, liczba plików, łączna ilość danych) i termin ważności
-ustawia się w panelu przy generowaniu linku.
-
----
+Per-link limits (file size, number of files, total bytes) and the expiry date are set in
+the panel when a link is generated.
 
 ### Branding
 
-Wygląd można dopasować do organizacji bez zmian w kodzie (zmienne `BRAND_*`, patrz
-`.env.example`): nazwa (`BRAND_NAME`, także jako wystawca w aplikacji TOTP), logo
-(`BRAND_LOGO_PATH`: PNG/SVG/JPEG/WebP, serwowane pod `/brand/logo` w miejsce nazwy w
-nagłówku i jako favicon), kolory (`BRAND_COLOR_PRIMARY` przyciski/linki,
-`BRAND_COLOR_TOPBAR` tło nagłówka, `BRAND_COLOR_ACCENT` wyróżnienia; hex `#rrggbb` w cudzysłowie,
-bo `#` bez cudzysłowu zaczyna komentarz w pliku `.env`) oraz
-tekst stopki. Kolory trafiają do generowanego arkusza `/brand/theme.css`, więc CSP
-pozostaje bez `unsafe-inline`. Plik logo trzymaj poza repozytorium (katalog `branding/`
-jest ignorowany przez git) i zamontuj go do kontenera, np.
+The look can be adapted to an organisation without code changes (`BRAND_*` variables, see
+`.env.example`): name (`BRAND_NAME`, also used as the issuer in authenticator apps), logo
+(`BRAND_LOGO_PATH`: PNG/SVG/JPEG/WebP, served at `/brand/logo` in place of the name in the
+top bar and as the favicon), colours (`BRAND_COLOR_PRIMARY` for buttons/links,
+`BRAND_COLOR_TOPBAR` for the header background, `BRAND_COLOR_ACCENT` for highlights; hex
+`#rrggbb` **in quotes**, because an unquoted `#` starts a comment in `.env` files) and the
+footer text. Colours are emitted as a generated stylesheet at `/brand/theme.css`, so the CSP
+stays free of `unsafe-inline`. Keep the logo file outside the repository (the `branding/`
+directory is git-ignored) and mount it into the container, e.g.
 `volumes: ["./branding:/branding:ro"]` + `BRAND_LOGO_PATH=/branding/logo.png`.
 
 ---
 
-## 4. Upload z terminala (curl)
+## 4. Uploading from the terminal (curl)
 
-Strona linku ma sekcję „Upload z terminala” z gotowymi komendami (rzeczywisty adres,
-token, przycisk „Kopiuj”). API zwraca JSON i poprawne kody HTTP; `--fail-with-body`
-daje niezerowy kod wyjścia (22) przy błędzie, ale nadal wypisuje treść błędu.
+The link page has a "Upload from the terminal" section with ready-made commands (real
+instance address, token, copy buttons). The API returns JSON and proper HTTP status codes;
+`--fail-with-body` makes curl exit non-zero (22) on errors while still printing the body.
 
 ```bash
-# jeden plik: curl -T dokleja nazwę pliku do adresu zakończonego "/"
+# one file: curl -T appends the file name to a URL ending in "/"
 curl --fail-with-body -H 'Authorization: Bearer <TOKEN>' \
-  -T '/ścieżka/do/pliku.pdf' 'https://drop.example.com/api/upload/'
+  -T '/path/to/file.pdf' 'https://drop.example.com/api/upload/'
 
-# kilka plików (ścieżki ze spacjami są bezpieczne)
-for f in '/ścieżka/raport.pdf' '/ścieżka/zdjęcie 1.jpg'; do
+# several files (paths with spaces are safe)
+for f in '/path/report.pdf' '/path/photo 1.jpg'; do
   curl --fail-with-body -H 'Authorization: Bearer <TOKEN>' -T "$f" 'https://drop.example.com/api/upload/'; echo
 done
 
-# token w zmiennej środowiskowej (zalecane; spacja na początku omija historię przy HISTCONTROL=ignorespace)
+# token in an environment variable (recommended; the leading space keeps it out of history with HISTCONTROL=ignorespace)
  export INLETBOX_TOKEN='<TOKEN>'
-curl --fail-with-body -H "Authorization: Bearer $INLETBOX_TOKEN" -T '/ścieżka/do/pliku.pdf' 'https://drop.example.com/api/upload/'
+curl --fail-with-body -H "Authorization: Bearer $INLETBOX_TOKEN" -T '/path/to/file.pdf' 'https://drop.example.com/api/upload/'
 
-# lista własnych plików
+# list your own files
 curl --fail-with-body -H "Authorization: Bearer $INLETBOX_TOKEN" 'https://drop.example.com/api/files'
 ```
 
-Odpowiedź `201`:
+Response `201`:
 
 ```json
-{"id":"f_3kq9…","name":"plik.pdf","size":1234567,"sha256":"…","status":"complete"}
+{"id":"f_3kq9…","name":"file.pdf","size":1234567,"sha256":"…","status":"complete"}
 ```
 
-Błędy: `401 missing_token`, `404 invalid_token`, `403 link_expired | link_revoked | case_closed`,
+Errors: `401 missing_token`, `404 invalid_token`, `403 link_expired | link_revoked | case_closed`,
 `413 file_too_large | too_many_files | quota_exceeded`, `429 rate_limited`.
 
-Endpoint przyjmuje surowe body (`PUT`/`POST /api/upload/<nazwa>`, alternatywnie nagłówek
-`X-File-Name`), z `Content-Length` lub `Transfer-Encoding: chunked`, obsługuje
-`Expect: 100-continue`. Token wyłącznie w nagłówku `Authorization` — nie jest akceptowany
-w query stringu, żeby nie trafiał do logów.
+The endpoint takes a raw body (`PUT`/`POST /api/upload/<name>`, alternatively an
+`X-File-Name` header), with `Content-Length` or `Transfer-Encoding: chunked`, and supports
+`Expect: 100-continue`. The token is accepted only in the `Authorization` header, never in
+the query string, so it does not end up in logs.
 
-**Uwaga:** polecenie z tokenem zostaje w historii powłoki (`~/.bash_history`, `~/.zsh_history`).
-Link traktuj jak hasło.
+**Note:** a command containing the token stays in the shell history (`~/.bash_history`,
+`~/.zsh_history`). Treat the link like a password.
 
 ---
 
-## 5. Wznawianie uploadów
+## 5. Resumable uploads
 
-### Porównanie
+### Comparison
 
-| Podejście | Za | Przeciw |
+| Approach | Pros | Cons |
 |---|---|---|
-| **tus** (`@tus/server`, `tus-js-client`) | dojrzały, otwarty protokół; store dla dysku lokalnego i S3 w tej samej bibliotece; klient przeglądarkowy z fingerprintem i retry; jasna semantyka `HEAD`/`PATCH`/offsetów | dodatkowy protokół do zrozumienia; klient CLI wymaga skryptu (kilka wywołań curl) |
-| własne fragmenty + offsety | pełna kontrola, brak zależności | ponowne wynalezienie tus: locking, ekspiracja, sidecary, błędy brzegowe, brak gotowego klienta |
-| S3 multipart upload | natywny dla S3, równoległe części | to mechanizm **backendu**: sam nie definiuje protokołu klient↔aplikacja (identyfikacja uploadu, offsety, autoryzacja wznowienia); nie działa z dyskiem lokalnym |
+| **tus** (`@tus/server`, `tus-js-client`) | mature open protocol; stores for local disk and S3 in the same library; browser client with fingerprinting and retries; clear `HEAD`/`PATCH`/offset semantics | one more protocol to understand; a CLI client needs a script (several curl calls) |
+| custom chunks + offsets | full control, no dependency | reinventing tus: locking, expiry, sidecars, edge cases, no ready-made client |
+| S3 multipart upload | native to S3, parallel parts | a **backend** mechanism: by itself it defines no client↔application protocol (upload identity, offsets, authorising a resume) and does not work with local disk |
 
-**Decyzja:** tus, działający od pierwszej wersji z oboma backendami. Dla S3 tus używa pod
-spodem multipart uploadu (`@tus/s3-store`), dla dysku pisze do pliku z offsetem.
+**Decision:** tus, working from the first version with both backends. On S3 tus uses
+multipart upload underneath (`@tus/s3-store`); on disk it writes to a file at an offset.
 
-### Jak to działa
+### How it works
 
-- Przeglądarka używa `tus-js-client` (serwowany lokalnie, bez CDN) z fragmentami
-  `UPLOAD_CHUNK_SIZE`, automatycznymi ponowieniami przy błędach sieci/5xx i zapisem
-  adresu uploadu w `localStorage` (fingerprint: nazwa + rozmiar + mtime + endpoint).
-  Po utracie połączenia upload kontynuuje się sam. **Po odświeżeniu strony trzeba
-  ponownie wskazać ten sam plik** — przeglądarka nie może sama otworzyć pliku z dysku;
-  wtedy upload wznawia się od ostatniego offsetu (widać „wznawianie poprzedniego uploadu”).
-- Autoryzacja: każde żądanie tus (`POST`, `HEAD`, `PATCH`, `DELETE`) wymaga aktywnego
-  tokenu. Upload jest przypisany do linku przy tworzeniu; inny link dostaje `404`
-  (bez wycieku informacji, czy upload istnieje).
-- Offsety kontroluje serwer tus (`409` przy niezgodności, brak możliwości zapisu poza
-  zadeklarowaną długość). `Upload-Length` jest wymagany (brak `Upload-Defer-Length`),
-  bo długość jest podstawą rezerwacji limitu.
-- Finalizacja jest idempotentna: rekord przechodzi `uploading → complete` dokładnie raz;
-  potem sidecar tus znika i upload odpowiada `410`.
-- Wygaśnięcie/unieważnienie linku lub zamknięcie sprawy natychmiast blokuje `PATCH`
-  (`403`); unieważnienie dodatkowo usuwa trwające uploady tego linku i zwalnia rezerwacje.
-- Nieukończone uploady żyją `INCOMPLETE_UPLOAD_TTL_HOURS`, potem sprzątanie usuwa dane
-  (plik + `.json` lub obiekt `.info` + abort multipart) i oznacza rekord `expired`.
+- The browser uses `tus-js-client` (served locally, no CDN) with `UPLOAD_CHUNK_SIZE`
+  chunks, automatic retries on network/5xx errors and the upload URL remembered in
+  `localStorage` (fingerprint: name + size + mtime + endpoint). After a dropped connection
+  the upload continues on its own. **After a page reload the same file has to be picked
+  again** (a browser cannot reopen a file from disk by itself); the upload then resumes
+  from the last offset ("resuming previous upload" is shown).
+- Authorisation: every tus request (`POST`, `HEAD`, `PATCH`, `DELETE`) needs an active
+  token. An upload is bound to its link at creation; any other link gets `404` (no oracle
+  for whether the upload exists).
+- Offsets are controlled by the tus server (`409` on mismatch, no writing past the
+  declared length). `Upload-Length` is required (`Upload-Defer-Length` is rejected)
+  because the length is the basis of the quota reservation.
+- Completion is idempotent: the record goes `uploading → complete` exactly once; the tus
+  sidecar is then removed and the upload answers `410`.
+- Link expiry/revocation or closing the case blocks `PATCH` immediately (`403`);
+  revocation additionally discards that link's in-flight uploads and releases reservations.
+- Unfinished uploads live for `INCOMPLETE_UPLOAD_TTL_HOURS`; then cleanup removes the data
+  (file + `.json`, or `.info` object + multipart abort) and marks the record `expired`.
 
 ### CLI
 
-Zwykły `curl -T` **nie** wznawia — przerwany upload trzeba wysłać od nowa. `curl -C -`
-dotyczy pobierania i zakresów HTTP, nie uploadów. Dla dużych plików jest skrypt
-[`scripts/inletbox-upload.sh`](scripts/inletbox-upload.sh) (do pobrania też ze strony
-linku), implementujący tus zwykłym curlem:
+Plain `curl -T` does **not** resume: an interrupted upload has to be sent again.
+`curl -C -` is about downloads and HTTP ranges, not uploads. For large files there is
+[`scripts/inletbox-upload.sh`](scripts/inletbox-upload.sh) (also downloadable from the
+link page), which implements tus with plain curl:
 
 ```bash
-INLETBOX_TOKEN='<TOKEN>' ./inletbox-upload.sh https://drop.example.com/api '/ścieżka/do/dużego pliku.iso'
+INLETBOX_TOKEN='<TOKEN>' ./inletbox-upload.sh https://drop.example.com/api '/path/to/large file.iso'
 ```
 
-Tworzy upload, wysyła fragmenty (`INLETBOX_CHUNK_SIZE`, domyślnie 32 MiB) i zapisuje adres
-uploadu w `~/.cache/inletbox/`. Po zerwaniu połączenia ponowne uruchomienie tej samej
-komendy pyta serwer o offset i kontynuuje. Ograniczenia: jeden plik na wywołanie, wymaga
-`bash`, `curl`, `tail`, `stat`, `sha256sum`/`shasum`; fragment jest buforowany przez curl
-w pamięci (nie ustawiaj setek MB).
+It creates the upload, sends chunks (`INLETBOX_CHUNK_SIZE`, default 32 MiB) and remembers
+the upload URL in `~/.cache/inletbox/`. After a broken connection, re-running the same
+command asks the server for the offset and continues. The token is read from the
+environment and passed to curl through a private temp file, so it stays out of `ps` output.
+Limitations: one file per invocation; needs `bash`, `curl`, `tail`, `stat`,
+`sha256sum`/`shasum`; each chunk is buffered by curl in memory (do not use hundreds of MB).
 
 ---
 
-## 6. Limity i rezerwacje
+## 6. Limits and reservations
 
-- Efektywny limit pliku = `min(MAX_FILE_SIZE, limit linku)`. Panel odrzuca limit linku
-  wyższy od globalnego.
-- Wszystkie limity sprawdza serwer w jednej transakcji `BEGIN IMMEDIATE` (SQLite jest
-  synchroniczne w `node:sqlite`, więc równoległe żądania są serializowane):
-  liczba plików (`complete` + `uploading`), rozmiar zadeklarowany, pozostały budżet
-  (`limit − ukończone − zarezerwowane`).
-- **Rezerwacja:** rozpoczęty upload rezerwuje zadeklarowany rozmiar (`Content-Length`
-  lub `Upload-Length`). Trzy równoległe pliki po 6 MB przy limicie 10 MB → dokładnie jeden
-  przechodzi (test `enforces per-link total quota under concurrent uploads`).
-- Bez `Content-Length` (chunked) rezerwowane jest maksimum, jakie ten upload może
-  legalnie mieć (`min(limit pliku, pozostały budżet)`); strumień jest liczony na bieżąco
-  i ucinany po przekroczeniu (`413`), a nadwyżka rezerwacji zwalniana po zakończeniu.
-- Przerwanie połączenia: rekord → `aborted`, dane częściowe usunięte, rezerwacja = 0
+- Effective per-file limit = `min(MAX_FILE_SIZE, link limit)`. The panel rejects a link
+  limit above the global one.
+- All limits are checked by the server inside one `BEGIN IMMEDIATE` transaction
+  (`node:sqlite` is synchronous, so concurrent requests are serialised): number of files
+  (`complete` + `uploading`), declared size, remaining budget
+  (`limit − completed − reserved`).
+- **Reservation:** a started upload reserves its declared size (`Content-Length` or
+  `Upload-Length`). Three parallel 6 MB files against a 10 MB limit → exactly one gets
+  through (test `enforces per-link total quota under concurrent uploads`).
+- Without `Content-Length` (chunked) the reservation is the maximum this upload could
+  legally be (`min(file limit, remaining budget)`); the stream is counted on the fly and
+  cut off when exceeded (`413`), and the surplus reservation is released on completion.
+- Dropped connection: record → `aborted`, partial data removed, reservation = 0
   (test `cleans up when the client disconnects mid-upload`).
-- Walidacja w przeglądarce (za duży plik) to tylko ułatwienie.
+- Browser-side validation (file too large) is only a convenience.
 
 ---
 
 ## 7. Storage
 
-Abstrakcja [`src/storage/types.ts`](src/storage/types.ts): `put` (streaming z licznikiem i
-SHA‑256), `get`, `stat`, `delete`, `createTusStore`, `removeTusSidecar`, `cleanupOrphans`,
-`healthCheck`. Klucze są walidowane (`^[A-Za-z0-9_-]{1,128}$`) — brak path traversal.
+Abstraction in [`src/storage/types.ts`](src/storage/types.ts): `put` (streaming with a
+byte counter and SHA-256), `get`, `stat`, `delete`, `createTusStore`, `removeTusSidecar`,
+`cleanupOrphans`, `healthCheck`. Keys are validated (`^[A-Za-z0-9_-]{1,128}$`), so there is
+no path traversal.
 
-- **local** — `LOCAL_STORAGE_DIR`, zapis z flagą `wx` (nigdy nie nadpisze istniejącego
-  klucza), tus zapisuje obok `<id>.json` do czasu ukończenia.
-- **s3** — `@aws-sdk/lib-storage` (multipart streaming, nieznana długość) dla uploadu
-  bezpośredniego, `@tus/s3-store` dla tus. Bucket ma być prywatny; aplikacja nie wystawia
-  presigned URL‑i ani poświadczeń klientowi. Wymagane uprawnienia: `s3:PutObject`,
+- **local** — `LOCAL_STORAGE_DIR`, written with the `wx` flag (never overwrites an existing
+  key) and mode `0600` in a `0700` directory; tus keeps `<id>.json` next to the file until
+  completion.
+- **s3** — `@aws-sdk/lib-storage` (streaming multipart, unknown length) for direct uploads,
+  `@tus/s3-store` for tus. The bucket must be private; the application exposes neither
+  presigned URLs nor credentials to clients. Required permissions: `s3:PutObject`,
   `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:AbortMultipartUpload`,
   `s3:ListBucketMultipartUploads`, `s3:ListMultipartUploadParts`.
 
-Sprzątanie (`runCleanup`, co `CLEANUP_INTERVAL_MINUTES` i przez CLI):
-1. nieukończone uploady starsze niż TTL → dane usunięte, status `expired`, rezerwacja 0;
-2. pliki `complete`, których obiekt zniknął → status `missing` (widoczny w panelu);
-3. artefakty w storage bez rekordu w bazie (sidecary, `.part`, porzucone multipart
-   uploady w S3) starsze niż TTL → usunięte;
-4. wygasłe sesje → usunięte.
+Cleanup (`runCleanup`, every `CLEANUP_INTERVAL_MINUTES` and via the CLI):
+1. unfinished uploads older than the TTL → data removed, status `expired`, reservation 0;
+2. `complete` files whose object disappeared → status `missing` (shown in the panel);
+3. storage artefacts with no database record (sidecars, `.part` objects, abandoned S3
+   multipart uploads) older than the TTL → removed; only keys in the application's own
+   format are ever touched;
+4. expired sessions → removed.
 
-Migracja plików między backendami nie jest wspierana (nie było wymagane).
+Migrating files between backends is not supported (it was not required).
 
 ---
 
 ## 8. Reverse proxy
 
-Aplikacja nie robi TLS. Ustawienia **niezbędne** dla dużych uploadów i streamingu:
+The application does not terminate TLS. Settings **required** for large uploads and streaming:
 
-- brak limitu body (lub ≥ `UPLOAD_CHUNK_SIZE` i ≥ największy plik przez `curl -T`);
-- **wyłączony buffering żądań** (inaczej proxy zapisuje cały upload na dysk, a limity
-  „bez Content-Length” i przerwania nie działają jak należy);
-- długie timeouty odczytu/wysyłki (godziny dla dużych plików);
-- `TRUST_PROXY=1` w aplikacji, `X-Forwarded-For`/`-Proto` z proxy.
+- no body size limit (or ≥ `UPLOAD_CHUNK_SIZE` and ≥ the largest file sent with `curl -T`);
+- **request buffering off** (otherwise the proxy spools the whole upload to disk and the
+  limits without `Content-Length` and abort handling do not behave as intended);
+- long read/send timeouts (hours for large files);
+- `TRUST_PROXY=1` in the application, `X-Forwarded-For`/`-Proto` set by the proxy.
 
 ### nginx
 
 ```nginx
-# Redakcja tokenu z adresu /u/<token> w access logu.
+# Redact the token from /u/<token> in the access log.
 map $request_uri $redacted_uri {
     ~^(?<pre>/u/)[^/?]+(?<post>.*)$  "${pre}[redacted]${post}";
     default                          $request_uri;
@@ -316,9 +323,9 @@ server {
     # ssl_certificate ...; ssl_certificate_key ...;
     access_log /var/log/nginx/inletbox.log redacted;
 
-    client_max_body_size 0;            # limity egzekwuje aplikacja
-    proxy_request_buffering off;       # streaming uploadu do aplikacji
-    proxy_buffering off;               # streaming pobierania do admina
+    client_max_body_size 0;            # limits are enforced by the application
+    proxy_request_buffering off;       # stream uploads to the application
+    proxy_buffering off;               # stream downloads to the admin
     proxy_http_version 1.1;
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
@@ -352,156 +359,175 @@ drop.example.com {
 }
 ```
 
-Node: aplikacja wyłącza domyślny 5‑minutowy `requestTimeout` (inaczej długie uploady
-byłyby ucinane), `headersTimeout` = 60 s.
+Node: the application disables the default 5-minute `requestTimeout` (it would cut long
+uploads) but keeps `headersTimeout` at 60 s and a 5-minute socket idle timeout (slowloris);
+an active upload keeps its socket busy, so it is unaffected.
 
 ---
 
-## 9. Bezpieczeństwo
+## 9. Security
 
-- **Logowanie:** hasła hashowane `scrypt` (N=2¹⁵, r=8, p=1, sól 16 B) z Node `crypto`;
-  weryfikacja w stałym czasie także dla nieistniejącego użytkownika; min. 12 znaków.
-- **Drugi składnik (TOTP, RFC 6238):** własna implementacja na `node:crypto` (HMAC‑SHA1,
-  6 cyfr, 30 s, okno ±1 krok), zgodna z Aegis/Google Authenticator/1Password. Włączanie
-  wymaga potwierdzenia kodem z aplikacji (QR + klucz do wpisania ręcznie), generuje 8
-  jednorazowych kodów zapasowych (w bazie tylko SHA‑256, pokazane raz). Po haśle sesja jest
-  „oczekująca” i nie ma dostępu do niczego poza formularzem kodu; 5 błędnych kodów niszczy
-  sesję; zaakceptowany krok czasu jest zapamiętywany, więc ten sam kod nie zadziała
-  drugi raz (ochrona przed replay). Wyłączenie lub wymiana kodów zapasowych wymaga
-  bieżącego kodu, nie samej sesji. Wszystko trafia do dziennika zdarzeń. Sekret TOTP jest
-  przechowywany w bazie w postaci jawnej (jak w większości implementacji); zabezpiecz plik
-  bazy i backupy.
-- **Sesje:** losowy identyfikator 256‑bit w cookie `HttpOnly; SameSite=Lax; Secure`
-  (przy HTTPS), w bazie tylko jego SHA‑256, TTL konfigurowalny.
-- **CSRF:** SameSite=Lax + kontrola `Origin`/`Sec-Fetch-Site` + token synchronizujący
-  w każdym formularzu (per sesja).
-- **Tokeny linków:** 256 bitów z CSPRNG, w bazie wyłącznie SHA‑256 (+ 6‑znakowa
-  podpowiedź do identyfikacji w panelu). Pełny link jest pokazany raz, w odpowiedzi na
-  utworzenie — nie da się go odzyskać z bazy, można tylko wygenerować nowy.
-- **Wygasanie/unieważnianie:** sprawdzane przy każdym żądaniu, także w trakcie tus.
-- **Rate limiting:** logowanie (nieudane), nieudane użycia tokenu, ogólny limit API.
-- **Nazwy plików:** normalizacja NFC, odcięcie ścieżek (`/`, `\`), usunięcie znaków
-  sterujących, limit 255 znaków; nigdy nie tworzą ścieżki w storage; w HTML wszystkie
-  interpolacje są escapowane (własny tagged template `html`), a `Content-Disposition`
-  buduje `content-disposition` (RFC 5987/6266).
-- **IDOR:** identyfikatory są losowe (96 bit), a każdy dostęp sprawdza właściciela
-  (link) lub sesję administratora; nieznane/cudze → `404`.
-- **Brak publicznego odczytu**, brak wykonywania/renderowania plików, pobranie tylko
-  jako `attachment` z `nosniff` i `CSP: sandbox`.
-- **Nagłówki:** helmet, CSP `default-src 'none'; script-src 'self'; …`,
-  `Referrer-Policy: no-referrer` (link nie wycieka przez referer), `frame-ancestors 'none'`,
-  brak zewnętrznych skryptów/fontów na stronie uploadu.
-- **Logi:** JSON na stdout; ścieżki `/u/<token>` i parametry `token=` są redagowane, nagłówki
-  `Authorization`/`Cookie` nie są logowane; przykłady w README nie zawierają prawdziwych tokenów.
-- **Dziennik zdarzeń** (`audit_log`, panel → „Dziennik”): logowania (udane i nie), operacje
-  na sprawach/linkach, start/ukończenie/przerwanie/odrzucenie uploadu, pobrania i usunięcia,
-  zdarzenia sprzątania; z IP klienta.
-- **Pliki są niezaufane.** Skanowanie antywirusowe **nie jest częścią tej wersji**. Miejsce
-  na integrację: `onUploadFinish` w [`src/http/tus.ts`](src/http/tus.ts) i zakończenie
-  `direct` w [`src/http/public.ts`](src/http/public.ts) — oba wywołują
-  `completeUpload`; skaner (np. ClamAV przez `clamd`) może tam ustawiać dodatkowy status
-  (`quarantined`) przed udostępnieniem pliku administratorowi.
+- **Login:** passwords hashed with `scrypt` (N=2¹⁵, r=8, p=1, 16-byte salt) from Node
+  `crypto`; constant-time verification even for unknown users; minimum 12 characters.
+- **Second factor (TOTP, RFC 6238):** own implementation on `node:crypto` (HMAC-SHA1,
+  6 digits, 30 s, ±1 step window), compatible with Aegis/Google Authenticator/1Password.
+  Enrolment requires a code from the app (QR + manual key + `otpauth://` link) and produces
+  8 one-time recovery codes (stored as SHA-256, shown once). After the password the session
+  is "pending" and can reach nothing but the code form; the session id is rotated once the
+  code passes. 5 wrong codes destroy the session; 10 wrong codes lock the account's second
+  factor for 15 minutes regardless of IP or session. The accepted time step is remembered,
+  so the same code cannot be replayed. Disabling TOTP or regenerating recovery codes needs
+  a current code, not just the session, and ends every other session. Everything is
+  audited. The TOTP secret is stored in clear in the database (as in most implementations):
+  protect the database file and its backups.
+- **Sessions:** random 256-bit id in an `HttpOnly; SameSite=Lax; Secure` (on HTTPS)
+  cookie, only its SHA-256 in the database, configurable TTL, new id on every login.
+- **CSRF:** SameSite=Lax + `Origin`/`Sec-Fetch-Site` checks + a per-session synchroniser
+  token in every form.
+- **Link tokens:** 256 bits from a CSPRNG, stored only as SHA-256 (+ a 6-character hint
+  for identification in the panel). The full link is shown once, in the response that
+  created it; it cannot be recovered from the database, only replaced by a new link.
+- **Expiry/revocation:** checked on every request, including mid-tus-upload.
+- **Rate limiting:** failed logins (password and TOTP), unknown-token attempts, general API.
+- **File names:** NFC normalisation, path components stripped (`/`, `\`), control
+  characters removed, 255-character limit; never used to build a storage path; every HTML
+  interpolation is escaped (own `html` tagged template) and `Content-Disposition` is built
+  by `content-disposition` (RFC 5987/6266).
+- **IDOR:** identifiers are random (96 bits) and every access checks the owner (link) or
+  the admin session; unknown or foreign → `404`.
+- **No public read path**, no execution or rendering of files; downloads only as
+  `attachment` with `nosniff` and `CSP: sandbox`.
+- **Headers:** helmet, CSP `default-src 'none'; script-src 'self'; style-src 'self'; …`
+  (no `unsafe-inline`), `Referrer-Policy: no-referrer` (the link does not leak through the
+  referrer), `X-Frame-Options: DENY`, no external scripts or fonts on the upload page.
+- **Process/file hygiene:** `umask 077`, files `0600`, directories `0700`; `TRUST_PROXY=true`
+  is refused so clients cannot forge `X-Forwarded-For`.
+- **Logs:** JSON on stdout; `/u/<token>` paths, `token=` parameters and uploader-supplied
+  file names are redacted; `Authorization`/`Cookie` are never logged; usernames of failed
+  logins are not stored (that field routinely receives mistyped passwords).
+- **Audit log** (`audit_log`, panel → "Dziennik"): logins (successful and failed, incl.
+  second-factor events and lockouts), case/link operations, upload start/completion/
+  abort/rejection, downloads and deletions, cleanup events; with the client IP.
+- **Files are untrusted.** Antivirus scanning is **not part of this version**. Integration
+  point: `onUploadFinish` in [`src/http/tus.ts`](src/http/tus.ts) and the end of `direct` in
+  [`src/http/public.ts`](src/http/public.ts); both call `completeUpload`, and a scanner
+  (e.g. ClamAV via `clamd`) could set an extra status (`quarantined`) there before the file
+  is offered to the administrator.
+
+An independent code review was run against this codebase before release; its findings
+(account-level TOTP lockout, session rotation, `TRUST_PROXY=true`, file modes, CLI script
+input validation, socket idle timeout, log redaction) are all addressed and covered by tests.
 
 ---
 
-## 10. Architektura i model danych
+## 10. Architecture and data model
 
-Monolit Express + SQLite w jednym procesie; storage jako wtyczka.
+A single-process Express + SQLite monolith; storage is a plug-in.
 
 ```
 src/
-  config.ts            zmienne środowiskowe → Config (parseSize itd.)
-  db.ts                node:sqlite, migracje z migrations/*.sql, transaction()
-  crypto.ts            id, tokeny, sha256, scrypt
-  log.ts               JSON log + redakcja
-  storage/             types (interfejs), local, s3, limit (licznik+hash)
-  services/            auth (admin+sesje), cases, links, files (rezerwacje), audit, cleanup
+  config.ts            environment variables → Config (parseSize, branding, …)
+  db.ts                node:sqlite, migrations from migrations/*.sql, transaction()
+  crypto.ts            ids, tokens, sha256, scrypt
+  totp.ts              RFC 6238 TOTP, base32, recovery codes
+  log.ts               JSON logging + redaction
+  storage/             types (interface), local, s3, limit (byte counter + hash)
+  services/            auth (admins, sessions, TOTP), cases, links, files (reservations), audit, cleanup
   http/
-    app.ts             składanie aplikacji, static, 404/500
-    middleware.ts      helmet/CSP, logger, sesje, CSRF, rate limity, auth linku (Bearer)
-    admin.ts           panel (SSR, formularze)
+    app.ts             application assembly, static assets, 404/500
+    brand.ts           /brand/logo, /brand/theme.css
+    middleware.ts      helmet/CSP, logger, sessions, CSRF, rate limits, link auth (Bearer)
+    admin.ts           panel (SSR forms), login + second factor, security page
     public.ts          /u/<token>, /api/link, /api/files, /api/upload (direct), /api/tus
-    tus.ts             @tus/server + hooki (rezerwacja, izolacja, finalizacja)
-    html.ts, views/    tagged template z escapowaniem, widoki
-  server.ts            http.Server (timeouty, 100-continue), sprzątanie cykliczne, shutdown
-  cli.ts               create-admin, reset-password, migrate, cleanup
+    tus.ts             @tus/server + hooks (reservation, isolation, finalisation)
+    html.ts, views/    escaping tagged template, views
+  server.ts            http.Server (timeouts, 100-continue), periodic cleanup, shutdown
+  cli.ts               create-admin, reset-password, disable-totp, migrate, cleanup
 public/                style.css, upload.js (tus-js-client), admin.js
-scripts/inletbox-upload.sh   wznawialny upload z CLI
+scripts/inletbox-upload.sh   resumable upload from the CLI
 ```
 
-Tabele ([`migrations/001_init.sql`](migrations/001_init.sql)):
+Tables ([`migrations/`](migrations/)):
 
-- `admins` (id, username, password_hash)
-- `sessions` (id_hash, admin_id, csrf_token, expires_at)
+- `admins` (id, username, password_hash, totp_secret, totp_enabled_at, totp_last_step,
+  totp_failed_count, totp_locked_until)
+- `admin_recovery_codes` (admin_id, code_hash, used_at)
+- `sessions` (id_hash, admin_id, csrf_token, expires_at, totp_verified, totp_attempts)
 - `cases` (id, name, description, status open|closed)
 - `links` (id, case_id, label, token_hash, token_hint, expires_at, revoked_at,
   max_file_bytes, max_files, max_total_bytes, last_used_at)
-- `files` (id = klucz storage = id tus, case_id, link_id, original_name, upload_kind tus|direct,
+- `files` (id = storage key = tus id, case_id, link_id, original_name, upload_kind tus|direct,
   status uploading|complete|aborted|expired|missing|deleted, declared_size, reserved_bytes,
   size, sha256, client_ip, created_at, completed_at, deleted_at)
 - `audit_log` (ts, actor_type admin|link|system, actor_id, action, case_id, link_id, file_id, ip, details)
 
-Przepływ uploadu z przeglądarki: `POST /api/tus` (Bearer) → `onUploadCreate` rezerwuje limit
-w transakcji i tworzy rekord `uploading` → `PATCH …` (offset kontrolowany przez tus, każdy
-request weryfikuje token i właściciela) → `onUploadFinish` → `complete`, sidecar usunięty.
-Upload bezpośredni: `PUT /api/upload/<nazwa>` → rezerwacja → `storage.put` (strumień z
-licznikiem i SHA‑256) → `complete`.
+Browser upload flow: `POST /api/tus` (Bearer) → `onUploadCreate` reserves quota in a
+transaction and creates an `uploading` record → `PATCH …` (offset controlled by tus, every
+request verifies the token and the owner) → `onUploadFinish` → `complete`, sidecar removed.
+Direct upload: `PUT /api/upload/<name>` → reservation → `storage.put` (stream with counter
+and SHA-256) → `complete`.
 
 ---
 
-## 11. Testy
+## 11. Tests
 
 ```bash
-npm test                    # backend lokalny (SQLite + katalog tymczasowy per plik testów)
+npm test                    # local backend (SQLite + a temporary directory per test file)
 docker compose --profile minio up -d minio
-TEST_S3=1 npm test          # ten sam zestaw przeciwko MinIO (bucket tymczasowy per plik testów)
+TEST_S3=1 npm test          # the same suite against MinIO (a temporary bucket per test file)
 ```
 
-Zestaw (vitest, 71 testów) uruchamia prawdziwy serwer HTTP na losowym porcie i obejmuje:
-utworzenie sprawy i linku przez formularze (pełny URL raz, potem tylko podpowiedź);
-upload z `Content-Length`, chunked i **prawdziwym curlem** (`-T` ze spacją w ścieżce,
-kod wyjścia 22 przy błędzie); izolację list między linkami; brak jakiejkolwiek drogi
-odczytu po ID pliku dla posiadacza linku; pobranie przez administratora z bezpiecznymi
-nagłówkami i usunięcie; limity (za duży plik, nadmiar plików, budżet) także przy
-**równoległych** żądaniach i bez `Content-Length`; brak nadpisywania duplikatów;
-sanityzację nazw (traversal, HTML); przerwanie połączenia i sprzątanie; tus: create/patch/head,
-zły offset (409), izolacja (404), finalizacja idempotentna (410), `tus-js-client` z przerwaniem
-i wznowieniem od zapisanego URL, wygaszanie nieukończonych uploadów, sprzątanie sierot i
-oznaczanie plików `missing`; wygaśnięcie/unieważnienie linku (w tym przerwanie trwającego
-uploadu) i zamknięcie sprawy; CSRF i rate limit logowania.
+The suite (vitest, 71 tests) boots a real HTTP server on a random port and covers: creating
+a case and a link through the forms (full URL once, then only the hint); uploads with
+`Content-Length`, chunked, and with **real curl** (`-T` with a space in the path, exit code
+22 on error); list isolation between links; no read path by file id for a link holder;
+admin download with safe headers, and deletion; limits (file too large, too many files,
+quota) also under **concurrent** requests and without `Content-Length`; no overwriting of
+duplicates; name sanitisation (traversal, HTML); dropped connections and cleanup; tus:
+create/patch/head, wrong offset (409), isolation (404), idempotent finalisation (410),
+`tus-js-client` with an interruption and resume from a stored URL, expiry of unfinished
+uploads, orphan sweeps and `missing` detection; link expiry/revocation (including aborting
+an in-flight upload) and case closure; CSRF and login rate limiting; branding.
 
-Testy bezpieczeństwa (`test/security.test.ts`, `test/totp.test.ts`): nagłówki (CSP bez
-`unsafe-inline`, `X-Frame-Options: DENY`, `nosniff`, brak `X-Powered-By`), atrybuty cookie
-(`HttpOnly`, `SameSite`, `Secure`), rotacja sesji przy logowaniu i unieważnienie przy
-wylogowaniu, brak zaufania do `X-Forwarded-For` bez `TRUST_PROXY`, throttling nieudanych
-tokenów, path traversal przez `/static`, nieprawidłowe identyfikatory, wrogie nazwy plików
-z trzech kanałów (URL, nagłówek, metadane tus) włącznie z CRLF i XSS, brak tokenów w
-dzienniku/panelu/JSON, tus bez tokenu i między linkami, `npm audit` bez podatności
-high/critical; TOTP: wektory testowe RFC 6238, okno czasowe, replay, sesja oczekująca bez
-dostępu do panelu, blokada po 5 błędach, kody zapasowe jednorazowe, wymiana kodów,
-wyłączanie z kodem, CLI `disable-totp`, tryb `ADMIN_REQUIRE_TOTP`.
+Security tests (`test/security.test.ts`, `test/totp.test.ts`): headers (CSP without
+`unsafe-inline`, `X-Frame-Options: DENY`, `nosniff`, no `X-Powered-By`), cookie attributes
+(`HttpOnly`, `SameSite`, `Secure`), session rotation at login and invalidation at logout,
+no trust in `X-Forwarded-For` without `TRUST_PROXY`, throttling of unknown tokens, path
+traversal through `/static`, malformed identifiers, hostile file names from three channels
+(URL, header, tus metadata) including CRLF and XSS, private file modes, no tokens in the
+audit log/panel/JSON, tus without a token and across links, `npm audit` with no high/critical
+findings; TOTP: RFC 6238 test vectors, time window, replay, pending session without panel
+access, session lockout after 5 errors, account lockout after 10 errors across sessions,
+one-time recovery codes, code regeneration, disabling with a code (ending other sessions),
+CLI `disable-totp`, `ADMIN_REQUIRE_TOTP` mode.
 
-Stan na dzień oddania: 71/71 zielonych na backendzie lokalnym i 71/71 na MinIO
-(`quay.io/minio/minio`), obraz Dockera buduje się poprawnie, skrypt CLI zweryfikowany
-ręcznie (zabity w połowie 8 MB pliku, wznowiony od zapisanego offsetu, treść identyczna).
+Status at release: 71/71 green on the local backend and 71/71 on MinIO
+(`quay.io/minio/minio`), the Docker image builds, the CLI script was verified by hand
+(killed halfway through an 8 MB file, resumed from the stored offset, identical content).
+The same checks run in GitHub Actions on every push.
 
 ---
 
-## 12. Ograniczenia i dalsze kroki
+## 12. Limitations and next steps
 
-- **Brak skanowania AV** (patrz §9) i brak kwarantanny.
-- Jeden proces / jeden węzeł: SQLite i lock tus w pamięci. Skalowanie poziome wymagałoby
-  Postgresa i lockera tus opartego np. o Redis.
-- SHA‑256 liczone tylko dla uploadu bezpośredniego; dla tus można dodać hashowanie po
-  finalizacji (odczyt ze storage) lub rozszerzenie `checksum`.
-- Sprzątanie weryfikuje istnienie każdego ukończonego pliku (`stat`); przy bardzo dużej
-  liczbie obiektów w S3 warto ograniczyć to do próbki lub uruchamiać rzadziej.
-- Wznawianie w przeglądarce po odświeżeniu wymaga ponownego wskazania pliku (ograniczenie
-  przeglądarek), a fingerprint tus‑js‑client zależy od nazwy/rozmiaru/mtime.
-- Jedna rola administratora; brak SSO/WebAuthn (jest TOTP), brak wielu poziomów uprawnień.
-- Presigned URL‑e nie są używane (pobranie zawsze przez aplikację). Dla bardzo dużych
-  plików można dodać krótkotrwały presigned `GET` ograniczony do jednego obiektu.
-- Brak powiadomień (e‑mail/webhook) o nowych plikach — naturalne miejsce: `upload.complete`
-  w `audit`.
-- Nazwa: `inletbox` nie ma repozytoriów na GitHubie (stan z dnia sprawdzenia); rejestracja
-  nazwy w npm/Docker Hub nie była sprawdzana.
+- **No antivirus scanning** (see §9) and no quarantine.
+- Single process / single node: SQLite and the in-memory tus lock. Horizontal scaling would
+  need PostgreSQL and a Redis-based tus locker.
+- SHA-256 is computed only for direct uploads; for tus it could be added after
+  finalisation (reading back from storage) or via the `checksum` extension.
+- Cleanup verifies the existence of every completed file (`stat`); with very many S3
+  objects limit this to a sample or run it less often.
+- Resuming in the browser after a reload requires picking the file again (a browser
+  limitation), and the tus-js-client fingerprint depends on name/size/mtime.
+- One administrator role; no SSO/WebAuthn (TOTP is available), no permission levels.
+- Presigned URLs are not used (downloads always go through the application). For very
+  large files a short-lived presigned `GET` scoped to one object could be added.
+- No notifications (e-mail/webhook) for new files; the natural hook is the
+  `upload.complete` audit event.
+- The web UI is Polish only; the strings live in `src/http/views/` and `public/*.js`.
+
+---
+
+## License
+
+MIT, see [LICENSE](LICENSE).
