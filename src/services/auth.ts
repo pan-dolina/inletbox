@@ -17,16 +17,18 @@ const USERNAME_RE = /^[a-zA-Z0-9._@-]{2,64}$/;
 export const MIN_PASSWORD_LENGTH = 12;
 /** Wrong second-factor codes per session before the session is destroyed. */
 export const MAX_TOTP_ATTEMPTS = 5;
-export const TOTP_ISSUER = 'inletbox';
+/** Wrong second-factor codes per account (across sessions and IPs) before a temporary lockout. */
+export const TOTP_ACCOUNT_LOCK_THRESHOLD = 10;
+export const TOTP_ACCOUNT_LOCK_MS = 15 * 60_000;
 
-interface AdminRow { id: string; username: string; password_hash: string; created_at: string; totp_secret: string | null; totp_enabled_at: string | null; totp_last_step: number | null }
+interface AdminRow { id: string; username: string; password_hash: string; created_at: string; totp_secret: string | null; totp_enabled_at: string | null; totp_last_step: number | null; totp_failed_count: number; totp_locked_until: string | null }
 
 function toAdmin(r: AdminRow): Admin {
   return { id: r.id, username: r.username, created_at: r.created_at, totp_enabled: r.totp_enabled_at != null };
 }
 
 function adminRow(db: Db, where: 'id' | 'username', value: string): AdminRow | undefined {
-  return db.prepare(`SELECT id, username, password_hash, created_at, totp_secret, totp_enabled_at, totp_last_step FROM admins WHERE ${where} = ?`).get(value) as AdminRow | undefined;
+  return db.prepare(`SELECT id, username, password_hash, created_at, totp_secret, totp_enabled_at, totp_last_step, totp_failed_count, totp_locked_until FROM admins WHERE ${where} = ?`).get(value) as AdminRow | undefined;
 }
 
 export function createAdmin(db: Db, username: string, password: string): Admin {
@@ -119,21 +121,52 @@ export function purgeExpiredSessions(db: Db): number {
 // TOTP second factor
 // ---------------------------------------------------------------------------
 
-export type TotpLoginResult = 'ok' | 'invalid' | 'locked';
+export type TotpLoginResult =
+  | { status: 'ok'; sessionId: string; csrfToken: string }
+  | { status: 'invalid' }
+  /** The pending session was destroyed (too many wrong codes in it) or the account is temporarily locked. */
+  | { status: 'locked'; accountLockedUntil?: string };
+
+/** Records a wrong code against the account; locks it for TOTP_ACCOUNT_LOCK_MS after the threshold. */
+function recordTotpFailure(db: Db, admin: AdminRow, nowMs: number): string | undefined {
+  const count = admin.totp_failed_count + 1;
+  if (count >= TOTP_ACCOUNT_LOCK_THRESHOLD) {
+    const until = new Date(nowMs + TOTP_ACCOUNT_LOCK_MS).toISOString();
+    db.prepare('UPDATE admins SET totp_failed_count = 0, totp_locked_until = ? WHERE id = ?').run(until, admin.id);
+    // Pending sessions are worthless during a lockout and would otherwise pile up.
+    db.prepare('DELETE FROM sessions WHERE admin_id = ? AND totp_verified = 0').run(admin.id);
+    return until;
+  }
+  db.prepare('UPDATE admins SET totp_failed_count = ? WHERE id = ?').run(count, admin.id);
+  return undefined;
+}
+
+function isTotpLocked(admin: AdminRow, nowMs: number): boolean {
+  return admin.totp_locked_until != null && new Date(admin.totp_locked_until).getTime() > nowMs;
+}
+
+/** True while the account refuses second-factor attempts. */
+export function totpLockedUntil(db: Db, adminId: string, nowMs = Date.now()): string | null {
+  const admin = adminRow(db, 'id', adminId);
+  return admin && isTotpLocked(admin, nowMs) ? admin.totp_locked_until : null;
+}
 
 /**
  * Verifies the second factor for a pending session. Accepts a TOTP code or an
- * unused recovery code. Wrong attempts are counted per session; after
- * MAX_TOTP_ATTEMPTS the session is destroyed ('locked') and the admin must log
- * in again with the password.
+ * unused recovery code. Wrong attempts are counted per session (MAX_TOTP_ATTEMPTS,
+ * then the session is destroyed) and per account (TOTP_ACCOUNT_LOCK_THRESHOLD,
+ * then a temporary lockout that no new session or IP can get around).
+ * On success the session id is rotated: the cookie issued at the password step
+ * never becomes the privileged one.
  */
-export function verifySessionTotp(db: Db, sessionId: string, code: string, nowMs = Date.now()): TotpLoginResult {
+export function verifySessionTotp(db: Db, sessionId: string, code: string, ttlMs: number, nowMs = Date.now()): TotpLoginResult {
   const idHash = sha256Hex(sessionId);
   return transaction(db, () => {
     const s = db.prepare('SELECT admin_id, totp_attempts FROM sessions WHERE id_hash = ?').get(idHash) as { admin_id: string; totp_attempts: number } | undefined;
-    if (!s) return 'locked';
+    if (!s) return { status: 'locked' };
     const admin = adminRow(db, 'id', s.admin_id);
-    if (!admin?.totp_secret || !admin.totp_enabled_at) return 'invalid';
+    if (!admin?.totp_secret || !admin.totp_enabled_at) return { status: 'invalid' };
+    if (isTotpLocked(admin, nowMs)) return { status: 'locked', accountLockedUntil: admin.totp_locked_until! };
 
     const step = verifyTotp(admin.totp_secret, code, { nowMs, minStep: admin.totp_last_step });
     let ok = step != null;
@@ -143,16 +176,21 @@ export function verifySessionTotp(db: Db, sessionId: string, code: string, nowMs
       ok = consumeRecoveryCode(db, admin.id, code);
     }
     if (ok) {
-      db.prepare('UPDATE sessions SET totp_verified = 1, totp_attempts = 0 WHERE id_hash = ?').run(idHash);
-      return 'ok';
+      db.prepare('UPDATE admins SET totp_failed_count = 0, totp_locked_until = NULL WHERE id = ?').run(admin.id);
+      db.prepare('DELETE FROM sessions WHERE id_hash = ?').run(idHash);
+      const fresh = createSession(db, toAdmin(admin), ttlMs);
+      db.prepare('UPDATE sessions SET totp_verified = 1 WHERE id_hash = ?').run(sha256Hex(fresh.sessionId));
+      return { status: 'ok', ...fresh };
     }
+    const accountLockedUntil = recordTotpFailure(db, admin, nowMs);
+    if (accountLockedUntil) return { status: 'locked', accountLockedUntil };
     const attempts = s.totp_attempts + 1;
     if (attempts >= MAX_TOTP_ATTEMPTS) {
       db.prepare('DELETE FROM sessions WHERE id_hash = ?').run(idHash);
-      return 'locked';
+      return { status: 'locked' };
     }
     db.prepare('UPDATE sessions SET totp_attempts = ? WHERE id_hash = ?').run(attempts, idHash);
-    return 'invalid';
+    return { status: 'invalid' };
   });
 }
 
@@ -214,23 +252,28 @@ export function remainingRecoveryCodes(db: Db, adminId: string): number {
   return (db.prepare('SELECT COUNT(*) AS n FROM admin_recovery_codes WHERE admin_id = ? AND used_at IS NULL').get(adminId) as { n: number }).n;
 }
 
-/** Disabling requires a current code (a stolen cookie alone must not be able to weaken the account). */
-export function disableTotp(db: Db, adminId: string, code: string, nowMs = Date.now()): boolean {
+/**
+ * Disabling requires a current code (a stolen cookie alone must not be able to
+ * weaken the account). Every other session of the admin is ended: pending ones
+ * must never be upgraded by the second factor going away.
+ */
+export function disableTotp(db: Db, adminId: string, code: string, keepSessionId: string, nowMs = Date.now()): boolean {
   return transaction(db, () => {
     const admin = adminRow(db, 'id', adminId);
     if (!admin?.totp_secret || !admin.totp_enabled_at) return false;
     const step = verifyTotp(admin.totp_secret, code, { nowMs, minStep: admin.totp_last_step });
     if (step == null && !consumeRecoveryCode(db, adminId, code)) return false;
-    forceDisableTotp(db, adminId);
+    forceDisableTotp(db, adminId, keepSessionId);
     return true;
   });
 }
 
-/** Operator escape hatch (CLI): removes the second factor without a code. */
-export function forceDisableTotp(db: Db, adminId: string): void {
-  db.prepare('UPDATE admins SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL WHERE id = ?').run(adminId);
+/** Operator escape hatch (CLI): removes the second factor without a code and ends all sessions (except `keepSessionId`). */
+export function forceDisableTotp(db: Db, adminId: string, keepSessionId?: string): void {
+  db.prepare('UPDATE admins SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL, totp_failed_count = 0, totp_locked_until = NULL WHERE id = ?').run(adminId);
   db.prepare('DELETE FROM admin_recovery_codes WHERE admin_id = ?').run(adminId);
-  db.prepare('UPDATE sessions SET totp_verified = 1 WHERE admin_id = ?').run(adminId);
+  if (keepSessionId) db.prepare('DELETE FROM sessions WHERE admin_id = ? AND id_hash != ?').run(adminId, sha256Hex(keepSessionId));
+  else db.prepare('DELETE FROM sessions WHERE admin_id = ?').run(adminId);
 }
 
 export function findAdminByUsername(db: Db, username: string): Admin | null {
@@ -238,4 +281,3 @@ export function findAdminByUsername(db: Db, username: string): Admin | null {
   return r ? toAdmin(r) : null;
 }
 
-export { TOTP_ISSUER as totpIssuer };

@@ -66,7 +66,8 @@ export function parseCookies(header: string | undefined): Record<string, string>
     if (idx < 0) continue;
     const k = part.slice(0, idx).trim();
     const v = part.slice(idx + 1).trim();
-    if (k) out[k] = decodeURIComponent(v);
+    if (!k) continue;
+    try { out[k] = decodeURIComponent(v); } catch { /* malformed cookie value: ignore it */ }
   }
   return out;
 }
@@ -158,7 +159,8 @@ export function tokenFailureLimiter(ctx: AppContext): RequestHandler {
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     skipSuccessfulRequests: true,
-    requestWasSuccessful: (_req, res) => res.statusCode < 400,
+    // Only unknown/unauthenticated tokens count; limit and state errors (403/413) are legitimate uploader mistakes.
+    requestWasSuccessful: (_req, res) => res.statusCode !== 401 && res.statusCode !== 404,
     message: { error: 'rate_limited', message: 'Too many failed attempts. Try again later.' },
   });
 }

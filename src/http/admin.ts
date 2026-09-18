@@ -8,7 +8,7 @@ import { log } from '../log.js';
 import { audit, listAudit } from '../services/audit.js';
 import {
   authenticate, beginTotpEnrolment, confirmTotpEnrolment, createSession, destroyOtherSessions, destroySession, disableTotp,
-  MAX_TOTP_ATTEMPTS, pendingTotpSecret, regenerateRecoveryCodes, remainingRecoveryCodes, TOTP_ISSUER, verifySessionTotp,
+  MAX_TOTP_ATTEMPTS, pendingTotpSecret, regenerateRecoveryCodes, remainingRecoveryCodes, totpLockedUntil, verifySessionTotp,
 } from '../services/auth.js';
 import { createCase, getCase, listCases, updateCase } from '../services/cases.js';
 import { discardUploadData } from '../services/cleanup.js';
@@ -47,6 +47,8 @@ function clearSessionCookie(res: Response): void {
 export function adminRouter(ctx: AppContext): Router {
   const r = Router();
   r.use(urlencoded({ extended: false, limit: '64kb' }));
+  // One budget for password and second-factor failures.
+  const loginFailures = loginLimiter(ctx);
 
   // ---- login / logout ----------------------------------------------------
   r.get('/login', (req, res) => {
@@ -54,12 +56,13 @@ export function adminRouter(ctx: AppContext): Router {
     res.type('html').send(loginPage({}));
   });
 
-  r.post('/login', loginLimiter(ctx), (req, res) => {
+  r.post('/login', loginFailures, (req, res) => {
     const username = field(req, 'username').trim();
     const password = field(req, 'password');
     const admin = username && password ? authenticate(ctx.db, username, password) : null;
     if (!admin) {
-      audit(ctx.db, { actorType: 'system', action: 'admin.login_failed', ip: req.ip, details: { username: username.slice(0, 64) } });
+      // The attempted username is deliberately not recorded: that field routinely receives passwords typed into the wrong box.
+      audit(ctx.db, { actorType: 'system', action: 'admin.login_failed', ip: req.ip });
       res.status(401).type('html').send(loginPage({ error: 'Nieprawidłowa nazwa użytkownika lub hasło.' }));
       return;
     }
@@ -89,22 +92,28 @@ export function adminRouter(ctx: AppContext): Router {
   // ---- second factor -------------------------------------------------------
   r.get('/totp', (req, res) => {
     if (req.session!.totpVerified) return res.redirect('/admin');
-    res.type('html').send(totpLoginPage({ csrfToken: req.session!.csrfToken }));
+    const lockedUntil = totpLockedUntil(ctx.db, req.session!.admin.id);
+    res.type('html').send(totpLoginPage({ csrfToken: req.session!.csrfToken, lockedUntil: lockedUntil ?? undefined }));
   });
 
-  r.post('/totp', loginLimiter(ctx), (req, res) => {
+  r.post('/totp', loginFailures, (req, res) => {
     const session = req.session!;
     if (session.totpVerified) return res.redirect(303, '/admin');
-    const result = verifySessionTotp(ctx.db, req.sessionId!, field(req, 'code'));
-    if (result === 'ok') {
+    const result = verifySessionTotp(ctx.db, req.sessionId!, field(req, 'code'), ctx.cfg.sessionTtlMs);
+    if (result.status === 'ok') {
       audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.login', ip: req.ip, details: { second_factor: true } });
+      // Fresh session id for the privileged session.
+      res.setHeader('Set-Cookie', sessionCookie(ctx, result.sessionId, Math.floor(ctx.cfg.sessionTtlMs / 1000)));
       res.redirect(303, '/admin');
       return;
     }
-    if (result === 'locked') {
-      audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.totp_locked', ip: req.ip });
+    if (result.status === 'locked') {
+      audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.totp_locked', ip: req.ip, details: { account_locked_until: result.accountLockedUntil } });
       clearSessionCookie(res);
-      res.status(401).type('html').send(loginPage({ error: 'Zbyt wiele błędnych kodów. Zaloguj się ponownie.' }));
+      const msg = result.accountLockedUntil
+        ? 'Zbyt wiele błędnych kodów dla tego konta. Logowanie drugim składnikiem jest zablokowane na 15 minut.'
+        : 'Zbyt wiele błędnych kodów. Zaloguj się ponownie.';
+      res.status(401).type('html').send(loginPage({ error: msg }));
       return;
     }
     audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.totp_failed', ip: req.ip });
@@ -120,13 +129,13 @@ export function adminRouter(ctx: AppContext): Router {
     const pending = session.admin.totp_enabled ? null : pendingTotpSecret(ctx.db, session.admin.id);
     let enrol: SecurityPageData['enrol'];
     if (pending) {
-      const uri = otpauthUri({ secret: pending, account: session.admin.username, issuer: TOTP_ISSUER });
+      const uri = otpauthUri({ secret: pending, account: session.admin.username, issuer: ctx.cfg.brand.name });
       const qrSvg = await QRCode.toString(uri, { type: 'svg', margin: 1, width: 200 });
       enrol = { qrSvg, secret: pending, uri };
     }
     res.status(status).type('html').send(securityPage({
       csrfToken: session.csrfToken, username: session.admin.username, nav: adminNav(session.admin.username, session.csrfToken),
-      totpEnabled: session.admin.totp_enabled, totpRequired: ctx.cfg.adminRequireTotp,
+      totpEnabled: session.admin.totp_enabled, totpRequired: ctx.cfg.adminRequireTotp, issuer: ctx.cfg.brand.name,
       recoveryLeft: session.admin.totp_enabled ? remainingRecoveryCodes(ctx.db, session.admin.id) : 0,
       enrol, ...extra,
     }));
@@ -174,7 +183,7 @@ export function adminRouter(ctx: AppContext): Router {
       renderSecurity(req, res, { error: 'Ta instancja wymaga TOTP (ADMIN_REQUIRE_TOTP); nie można go wyłączyć.' }, 400).catch(next);
       return;
     }
-    if (!disableTotp(ctx.db, session.admin.id, field(req, 'code'))) {
+    if (!disableTotp(ctx.db, session.admin.id, field(req, 'code'), req.sessionId!)) {
       audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.totp_failed', ip: req.ip, details: { context: 'disable' } });
       renderSecurity(req, res, { error: 'Nieprawidłowy kod.' }, 400).catch(next);
       return;

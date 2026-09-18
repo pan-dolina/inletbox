@@ -14,8 +14,8 @@
 # Limitations:
 #   * requires bash, curl, tail, stat and sha256sum/shasum (macOS: shasum);
 #   * one file per invocation; loop over files in the shell for several;
-#   * the token is passed via the environment to keep it out of shell history
-#     and process lists — do not paste it as a command-line argument.
+#   * the token is read from the environment and handed to curl through a
+#     private temp file, so it stays out of shell history and `ps` output.
 set -euo pipefail
 
 API="${1:-}"
@@ -42,17 +42,30 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/inletbox"
 mkdir -p "$CACHE_DIR"
 STATE="$CACHE_DIR/$KEY.url"
 
-curl_common=(--silent --show-error --fail-with-body -H "$AUTH" -H 'Tus-Resumable: 1.0.0' -H 'Expect:')
+# The Authorization header is passed through a file descriptor, not as an argument, so it
+# does not show up in `ps` output for other users on the machine.
+HDR_FILE=$(mktemp)
+trap 'rm -f "$HDR_FILE"' EXIT
+chmod 600 "$HDR_FILE"
+printf '%s\n' "$AUTH" > "$HDR_FILE"
+curl_common=(--silent --show-error --fail-with-body -H "@$HDR_FILE" -H 'Tus-Resumable: 1.0.0' -H 'Expect:')
+
+# Anything the server sends back is untrusted input: only plain integers are ever used in arithmetic.
+is_int() { [[ "$1" =~ ^[0-9]+$ ]]; }
 
 fail() { echo "error: $*" >&2; exit 1; }
 
 get_offset() {
   # Prints the current Upload-Offset, or "gone" when the server no longer knows the upload.
   local hdrs code
-  hdrs=$(curl --silent --show-error -o /dev/null -D - -X HEAD -I -H "$AUTH" -H 'Tus-Resumable: 1.0.0' "$1" 2>/dev/null || true)
+  hdrs=$(curl --silent --show-error -o /dev/null -D - -X HEAD -I -H "@$HDR_FILE" -H 'Tus-Resumable: 1.0.0' "$1" 2>/dev/null || true)
   code=$(printf '%s' "$hdrs" | head -n1 | awk '{print $2}')
   case "$code" in
-    200|204) printf '%s' "$hdrs" | tr -d '\r' | awk 'tolower($1)=="upload-offset:" {print $2}' ;;
+    200|204)
+      local off
+      off=$(printf '%s' "$hdrs" | tr -d '\r' | awk 'tolower($1)=="upload-offset:" {print $2}')
+      is_int "$off" || fail "server returned a malformed Upload-Offset"
+      printf '%s' "$off" ;;
     404|410|403) echo gone ;;
     *) fail "HEAD $1 returned HTTP ${code:-none}" ;;
   esac
@@ -96,7 +109,7 @@ while (( OFFSET < SIZE )); do
       -H 'Content-Type: application/offset+octet-stream' -H "Upload-Offset: $OFFSET" -H "Content-Length: $len" \
       --data-binary @- "$UPLOAD_URL" ) || { echo "chunk at offset $OFFSET failed; re-run to resume" >&2; exit 1; }
   new_offset=$(printf '%s' "$resp" | tr -d '\r' | awk 'tolower($1)=="upload-offset:" {print $2}')
-  [[ -n "$new_offset" ]] || fail "no Upload-Offset in response"
+  is_int "$new_offset" || fail "malformed or missing Upload-Offset in response"
   OFFSET=$new_offset
   printf '\r%3d%% (%s / %s)' $(( OFFSET * 100 / (SIZE == 0 ? 1 : SIZE) )) "$OFFSET" "$SIZE" >&2
 done

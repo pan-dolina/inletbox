@@ -22,6 +22,10 @@ describe('config', () => {
     expect(() => loadConfig({ STORAGE_BACKEND: 's3', S3_BUCKET: 'b', S3_PART_SIZE: '1MB' })).toThrow(/S3_PART_SIZE/);
     expect(loadConfig({ PUBLIC_URL: 'https://drop.example.com/' }).cookieSecure).toBe(true);
     expect(loadConfig({ PUBLIC_URL: 'https://drop.example.com/' }).publicUrl).toBe('https://drop.example.com');
+    expect(() => loadConfig({ TRUST_PROXY: 'true' })).toThrow(/TRUST_PROXY=true/);
+    expect(loadConfig({ TRUST_PROXY: '1' }).trustProxy).toBe(1);
+    expect(loadConfig({ TRUST_PROXY: '10.0.0.1, loopback' }).trustProxy).toBe('10.0.0.1, loopback');
+    expect(() => loadConfig({ DATA_DIR: '/tmp/x', LOCAL_STORAGE_DIR: '/tmp/x' })).toThrow(/LOCAL_STORAGE_DIR/);
   });
 });
 
@@ -83,5 +87,7 @@ describe('log redaction', () => {
     expect(redact('GET /u/abc?x=1')).toBe('GET /u/[redacted]?x=1');
     expect(redact('/api/files?token=secret&x=1')).toBe('/api/files?token=[redacted]&x=1');
     expect(redact('/admin/cases/c_123')).toBe('/admin/cases/c_123');
+    expect(redact('/api/upload/Umowa%20Kowalski.pdf')).toBe('/api/upload/[filename]');
+    expect(redact('/api/upload/')).toBe('/api/upload/');
   });
 });

@@ -1,12 +1,13 @@
 import { html, layout, raw, type SafeHtml } from '../html.js';
 
 /** Second step of the login: the session exists but the TOTP code is still missing. */
-export function totpLoginPage(opts: { csrfToken: string; error?: string; attemptsLeft?: number }): string {
+export function totpLoginPage(opts: { csrfToken: string; error?: string; attemptsLeft?: number; lockedUntil?: string }): string {
   return layout({
     title: 'Drugi składnik',
     body: html`<section class="card narrow">
       <h1>Kod z aplikacji uwierzytelniającej</h1>
       ${opts.error ? html`<div class="flash flash-error">${opts.error}${opts.attemptsLeft != null ? html` Pozostałe próby: ${opts.attemptsLeft}.` : ''}</div>` : ''}
+      ${opts.lockedUntil ? html`<div class="flash flash-error">Konto jest tymczasowo zablokowane po wielu błędnych kodach (do ${opts.lockedUntil.replace('T', ' ').slice(0, 16)} UTC).</div>` : ''}
       <form method="post" action="/admin/totp">
         <input type="hidden" name="_csrf" value="${opts.csrfToken}">
         <label>Kod (6 cyfr) lub kod zapasowy
@@ -14,7 +15,7 @@ export function totpLoginPage(opts: { csrfToken: string; error?: string; attempt
         </label>
         <button class="btn btn-primary" type="submit">Potwierdź</button>
       </form>
-      <form method="post" action="/admin/logout" class="inline"><input type="hidden" name="_csrf" value="${opts.csrfToken}"><button class="btn btn-link" type="submit" style="color:#6b7280">Anuluj i wyloguj</button></form>
+      <form method="post" action="/admin/logout" class="inline"><input type="hidden" name="_csrf" value="${opts.csrfToken}"><button class="btn btn-link btn-link-muted" type="submit">Anuluj i wyloguj</button></form>
     </section>`,
   });
 }
@@ -25,6 +26,7 @@ export interface SecurityPageData {
   nav: SafeHtml;
   totpEnabled: boolean;
   totpRequired: boolean;
+  issuer: string;
   recoveryLeft: number;
   /** Enrolment in progress: QR (SVG markup produced by the qrcode library) + secret for manual entry. */
   enrol?: { qrSvg: string; secret: string; uri: string };
@@ -69,8 +71,8 @@ export function securityPage(d: SecurityPageData): string {
           <div class="qr">${raw(d.enrol.qrSvg)}</div>
           <div class="grow small">
             <p>Albo wpisz klucz ręcznie:</p>
-            <p class="mono" style="word-break:break-all">${d.enrol.secret.replace(/(.{4})/g, '$1 ').trim()}</p>
-            <p class="muted">Typ: TOTP, SHA-1, 6 cyfr, 30 s. Wystawca: inletbox, konto: ${d.username}.</p>
+            <p class="mono breakable">${d.enrol.secret.replace(/(.{4})/g, '$1 ').trim()}</p>
+            <p class="muted">Typ: TOTP, SHA-1, 6 cyfr, 30 s. Wystawca: ${d.issuer}, konto: ${d.username}.</p>
             <p><a href="${d.enrol.uri}">Otwórz w aplikacji uwierzytelniającej</a> (na telefonie)</p>
           </div>
         </div>

@@ -82,7 +82,7 @@ async function main(argv: string[]): Promise<void> {
       const admin = findAdminByUsername(db, username);
       if (!admin) throw new Error(`No admin named "${username}"`);
       forceDisableTotp(db, admin.id);
-      console.log(`TOTP disabled for "${username}". They should re-enrol from the panel (Bezpieczeństwo).`);
+      console.log(`TOTP disabled for "${username}"; all their sessions were ended. They should re-enrol from the panel (Bezpieczeństwo).`);
       break;
     }
     case 'cleanup': {

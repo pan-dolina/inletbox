@@ -3,6 +3,10 @@ import { fileURLToPath } from 'node:url';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { log } from '../log.js';
 import { adminRouter } from './admin.js';
+import { brandRouter } from './brand.js';
+import { setAssetVersion, setBrand } from './html.js';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import type { AppContext } from './context.js';
 import { publicRouter } from './public.js';
 import { requestLogger, securityHeaders, sessionMiddleware } from './middleware.js';
@@ -18,6 +22,15 @@ export function createApp(ctx: AppContext): Express {
 
   app.use(securityHeaders());
   app.use(requestLogger());
+
+  setBrand(ctx.cfg.brand);
+  const h = createHash('sha256');
+  for (const f of ['public/style.css', 'public/upload.js', 'public/admin.js', 'node_modules/tus-js-client/dist/tus.min.js']) {
+    try { h.update(fs.readFileSync(path.join(ROOT, f))); } catch { /* missing asset: version still changes when others do */ }
+  }
+  h.update(JSON.stringify(ctx.cfg.brand));
+  setAssetVersion(h.digest('hex').slice(0, 12));
+  app.use('/brand', brandRouter(ctx.cfg.brand));
 
   // Static assets: our own CSS/JS, the tus browser client from node_modules, and the CLI helper script.
   const staticOpts = { index: false, dotfiles: 'ignore' as const, maxAge: '1h', etag: true };

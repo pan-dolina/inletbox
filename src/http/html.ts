@@ -47,6 +47,18 @@ export function jsonScript(id: string, data: unknown): SafeHtml {
   return raw(`<script type="application/json" id="${escapeHtml(id)}">${json}</script>`);
 }
 
+import type { Brand } from '../config.js';
+
+/** Set once per process by createApp(); views read it when rendering the chrome. */
+let currentBrand: Brand = { name: 'inletbox', logoPath: null, colorPrimary: '#1f6feb', colorTopbar: '#101418', colorAccent: '#1f6feb', footerText: 'inletbox · prywatna skrzynka wrzutowa' };
+export function setBrand(brand: Brand): void { currentBrand = brand; }
+
+/** Appended as ?v= to our own static assets so browsers never keep a stale stylesheet after an upgrade. */
+let assetVersion = 'dev';
+export function setAssetVersion(v: string): void { assetVersion = v; }
+export function asset(path: string): string { return `${path}?v=${assetVersion}`; }
+export function getBrand(): Brand { return currentBrand; }
+
 export interface LayoutOptions {
   title: string;
   body: SafeHtml;
@@ -55,27 +67,30 @@ export interface LayoutOptions {
 }
 
 export function layout(opts: LayoutOptions): string {
+  const b = currentBrand;
   return html`<!doctype html>
 <html lang="pl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>${opts.title} · inletbox</title>
-<link rel="stylesheet" href="/static/style.css">
+<title>${opts.title} · ${b.name}</title>
+<link rel="stylesheet" href="${asset('/static/style.css')}">
+<link rel="stylesheet" href="/brand/theme.css">
+${b.logoPath ? html`<link rel="icon" href="/brand/logo">` : ''}
 </head>
 <body>
 <header class="topbar">
   <div class="topbar-inner">
-    <a class="brand" href="/">inletbox</a>
+    <a class="brand" href="/">${b.logoPath ? html`<img class="brand-logo" src="/brand/logo" alt="${b.name}">` : b.name}</a>
     ${opts.nav ?? ''}
   </div>
 </header>
 <main class="container">
 ${opts.body}
 </main>
-<footer class="footer">inletbox · prywatna skrzynka wrzutowa</footer>
-${(opts.scripts ?? []).map((s) => html`<script src="${s}" defer></script>`)}
+<footer class="footer">${b.footerText}</footer>
+${(opts.scripts ?? []).map((s) => html`<script src="${asset(s)}" defer></script>`)}
 </body>
 </html>`.value;
 }

@@ -133,6 +133,21 @@ ustawia się w panelu przy generowaniu linku.
 
 ---
 
+### Branding
+
+Wygląd można dopasować do organizacji bez zmian w kodzie (zmienne `BRAND_*`, patrz
+`.env.example`): nazwa (`BRAND_NAME`, także jako wystawca w aplikacji TOTP), logo
+(`BRAND_LOGO_PATH`: PNG/SVG/JPEG/WebP, serwowane pod `/brand/logo` w miejsce nazwy w
+nagłówku i jako favicon), kolory (`BRAND_COLOR_PRIMARY` przyciski/linki,
+`BRAND_COLOR_TOPBAR` tło nagłówka, `BRAND_COLOR_ACCENT` wyróżnienia; hex `#rrggbb` w cudzysłowie,
+bo `#` bez cudzysłowu zaczyna komentarz w pliku `.env`) oraz
+tekst stopki. Kolory trafiają do generowanego arkusza `/brand/theme.css`, więc CSP
+pozostaje bez `unsafe-inline`. Plik logo trzymaj poza repozytorium (katalog `branding/`
+jest ignorowany przez git) i zamontuj go do kontenera, np.
+`volumes: ["./branding:/branding:ro"]` + `BRAND_LOGO_PATH=/branding/logo.png`.
+
+---
+
 ## 4. Upload z terminala (curl)
 
 Strona linku ma sekcję „Upload z terminala” z gotowymi komendami (rzeczywisty adres,
@@ -442,7 +457,7 @@ docker compose --profile minio up -d minio
 TEST_S3=1 npm test          # ten sam zestaw przeciwko MinIO (bucket tymczasowy per plik testów)
 ```
 
-Zestaw (vitest, 64 testy) uruchamia prawdziwy serwer HTTP na losowym porcie i obejmuje:
+Zestaw (vitest, 71 testów) uruchamia prawdziwy serwer HTTP na losowym porcie i obejmuje:
 utworzenie sprawy i linku przez formularze (pełny URL raz, potem tylko podpowiedź);
 upload z `Content-Length`, chunked i **prawdziwym curlem** (`-T` ze spacją w ścieżce,
 kod wyjścia 22 przy błędzie); izolację list między linkami; brak jakiejkolwiek drogi
@@ -466,7 +481,7 @@ high/critical; TOTP: wektory testowe RFC 6238, okno czasowe, replay, sesja oczek
 dostępu do panelu, blokada po 5 błędach, kody zapasowe jednorazowe, wymiana kodów,
 wyłączanie z kodem, CLI `disable-totp`, tryb `ADMIN_REQUIRE_TOTP`.
 
-Stan na dzień oddania: 64/64 zielonych na backendzie lokalnym i 64/64 na MinIO
+Stan na dzień oddania: 71/71 zielonych na backendzie lokalnym i 71/71 na MinIO
 (`quay.io/minio/minio`), obraz Dockera buduje się poprawnie, skrypt CLI zweryfikowany
 ręcznie (zabity w połowie 8 MB pliku, wznowiony od zapisanego offsetu, treść identyczna).
 

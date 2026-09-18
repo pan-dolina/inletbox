@@ -2,8 +2,20 @@ import path from 'node:path';
 
 export type StorageBackendKind = 'local' | 's3';
 
+export interface Brand {
+  /** Shown in titles, the top bar (when no logo) and the TOTP issuer. */
+  name: string;
+  /** Absolute path of a PNG/SVG/JPEG/WebP file served at /brand/logo, or null. */
+  logoPath: string | null;
+  colorPrimary: string;
+  colorTopbar: string;
+  colorAccent: string;
+  footerText: string;
+}
+
 export interface Config {
   publicUrl: string;
+  brand: Brand;
   host: string;
   port: number;
   trustProxy: boolean | number | string;
@@ -77,6 +89,34 @@ function bool(env: NodeJS.ProcessEnv, key: string, def: boolean): boolean {
   return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
 }
 
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const LOGO_EXTENSIONS = ['.png', '.svg', '.jpg', '.jpeg', '.webp'];
+
+function color(env: NodeJS.ProcessEnv, key: string, def: string): string {
+  const raw = (env[key] ?? '').trim();
+  if (!raw) return def;
+  if (!HEX_COLOR_RE.test(raw)) throw new Error(`${key} must be a hex colour like #0f766e`);
+  return raw.toLowerCase();
+}
+
+export function loadBrand(env: NodeJS.ProcessEnv): Brand {
+  const name = (env.BRAND_NAME ?? '').trim().slice(0, 60) || 'inletbox';
+  let logoPath: string | null = null;
+  if (env.BRAND_LOGO_PATH?.trim()) {
+    logoPath = path.resolve(env.BRAND_LOGO_PATH.trim());
+    if (!LOGO_EXTENSIONS.includes(path.extname(logoPath).toLowerCase())) throw new Error(`BRAND_LOGO_PATH must point to a ${LOGO_EXTENSIONS.join('/')} file`);
+  }
+  const colorPrimary = color(env, 'BRAND_COLOR_PRIMARY', '#1f6feb');
+  return {
+    name,
+    logoPath,
+    colorPrimary,
+    colorTopbar: color(env, 'BRAND_COLOR_TOPBAR', '#101418'),
+    colorAccent: color(env, 'BRAND_COLOR_ACCENT', colorPrimary),
+    footerText: (env.BRAND_FOOTER_TEXT ?? '').trim().slice(0, 200) || `${name} · prywatna skrzynka wrzutowa`,
+  };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const publicUrl = (env.PUBLIC_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
   let parsed: URL;
@@ -87,11 +127,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const storage = (env.STORAGE_BACKEND ?? 'local') as StorageBackendKind;
   if (!['local', 's3'].includes(storage)) throw new Error(`STORAGE_BACKEND must be "local" or "s3", got "${storage}"`);
 
-  const trustRaw = env.TRUST_PROXY ?? 'false';
+  const trustRaw = (env.TRUST_PROXY ?? 'false').trim();
   let trustProxy: boolean | number | string = false;
-  if (['true', '1', 'yes'].includes(trustRaw.toLowerCase())) trustProxy = trustRaw === '1' ? 1 : true;
-  else if (/^\d+$/.test(trustRaw)) trustProxy = Number(trustRaw);
-  else if (trustRaw && !['false', '0', 'no', ''].includes(trustRaw.toLowerCase())) trustProxy = trustRaw;
+  if (['true', 'yes', 'on'].includes(trustRaw.toLowerCase())) {
+    // Blanket trust would let clients pick their own X-Forwarded-For (rate limits, audit IPs).
+    throw new Error('TRUST_PROXY=true is not allowed: use the number of proxy hops (e.g. 1) or a list of proxy addresses/CIDRs');
+  } else if (/^\d+$/.test(trustRaw)) trustProxy = Number(trustRaw);
+  else if (trustRaw && !['false', '0', 'no', 'off'].includes(trustRaw.toLowerCase())) trustProxy = trustRaw;
 
   const s3PartSize = parseSize(env.S3_PART_SIZE ?? '8MB', 'S3_PART_SIZE');
   if (storage === 's3') {
@@ -107,15 +149,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const logLevel = (env.LOG_LEVEL ?? 'info') as Config['logLevel'];
   if (!['debug', 'info', 'warn', 'error'].includes(logLevel)) throw new Error(`Invalid LOG_LEVEL: ${logLevel}`);
 
+  const databasePath = env.DATABASE_PATH ? path.resolve(env.DATABASE_PATH) : path.join(dataDir, 'inletbox.sqlite');
+  const localStorageDir = env.LOCAL_STORAGE_DIR ? path.resolve(env.LOCAL_STORAGE_DIR) : path.join(dataDir, 'files');
+  if (storage === 'local' && path.dirname(databasePath) === localStorageDir) {
+    throw new Error('The database must not live inside LOCAL_STORAGE_DIR (the orphan sweep only touches that directory, keep them apart)');
+  }
+
   return {
     publicUrl,
+    brand: loadBrand(env),
     host: env.HOST ?? '0.0.0.0',
     port: num(env, 'PORT', 3000),
     trustProxy,
     dataDir,
-    databasePath: env.DATABASE_PATH ? path.resolve(env.DATABASE_PATH) : path.join(dataDir, 'inletbox.sqlite'),
+    databasePath,
     storage,
-    localStorageDir: env.LOCAL_STORAGE_DIR ? path.resolve(env.LOCAL_STORAGE_DIR) : path.join(dataDir, 'files'),
+    localStorageDir,
     s3: {
       endpoint: env.S3_ENDPOINT || undefined,
       region: env.S3_REGION || 'us-east-1',

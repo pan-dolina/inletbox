@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { listAudit } from '../src/services/audit.js';
-import { findAdminByUsername, pendingTotpSecret } from '../src/services/auth.js';
+import { findAdminByUsername, pendingTotpSecret, totpLockedUntil } from '../src/services/auth.js';
 import { base32Decode, base32Encode, hotp, otpauthUri, totp, totpStep, verifyTotp } from '../src/totp.js';
 import { ADMIN_PASS, ADMIN_USER, adminPost, boot, type AdminSession, type TestApp } from './helpers.js';
 
@@ -51,6 +51,8 @@ describe('admin two-factor login flow', () => {
   let recoveryCodes: string[];
   beforeAll(async () => { app = await boot({ LOGIN_RATE_LIMIT_PER_15MIN: '100' }); });
   afterAll(async () => { await app.close(); });
+  // Wrong codes accumulate per account across tests (by design); each test starts unlocked.
+  beforeEach(() => { app.ctx.db.prepare('UPDATE admins SET totp_failed_count = 0, totp_locked_until = NULL').run(); });
 
   async function passwordLogin(): Promise<{ cookie: string; location: string | null }> {
     const res = await fetch(`${app.base}/admin/login`, {
@@ -70,6 +72,15 @@ describe('admin two-factor login flow', () => {
       method: 'POST', redirect: 'manual', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ _csrf: csrf, code }),
     });
+  }
+  /** The privileged session gets a fresh cookie; the pending one is gone. */
+  function rotated(res: Response): string { return res.headers.get('set-cookie')!.split(';')[0]!; }
+  async function loginWithTotp(): Promise<AdminSession> {
+    const { cookie } = await passwordLogin();
+    const res = await postTotp(cookie, freshCode());
+    expect(res.status).toBe(303);
+    const verified = rotated(res);
+    return { cookie: verified, csrf: await csrfFor(verified, '/admin/security') };
   }
   /**
    * A valid code for "now". Replay protection remembers the last accepted step, so between
@@ -127,7 +138,11 @@ describe('admin two-factor login flow', () => {
     const good = await postTotp(cookie, freshCode());
     expect(good.status).toBe(303);
     expect(good.headers.get('location')).toBe('/admin');
-    expect((await fetch(`${app.base}/admin`, { headers: { cookie }, redirect: 'manual' })).status).toBe(200);
+    // Session id rotated: the pending cookie is dead, the new one is privileged.
+    const verified = rotated(good);
+    expect(verified).not.toBe(cookie);
+    expect((await fetch(`${app.base}/admin`, { headers: { cookie }, redirect: 'manual' })).headers.get('location')).toBe('/admin/login');
+    expect((await fetch(`${app.base}/admin`, { headers: { cookie: verified }, redirect: 'manual' })).status).toBe(200);
     const actions = listAudit(app.ctx.db, 20).map((r) => r.action);
     expect(actions).toEqual(expect.arrayContaining(['admin.login_password', 'admin.totp_failed', 'admin.login']));
   });
@@ -162,19 +177,39 @@ describe('admin two-factor login flow', () => {
   it('accepts each recovery code exactly once', async () => {
     const code = recoveryCodes[0]!;
     const a = await passwordLogin();
-    expect((await postTotp(a.cookie, code.toUpperCase())).status).toBe(303);
+    const ok = await postTotp(a.cookie, code.toUpperCase());
+    expect(ok.status).toBe(303);
     const b = await passwordLogin();
     expect((await postTotp(b.cookie, code)).status).toBe(401);
     expect((await postTotp(b.cookie, 'zzzzz-zzzzz')).status).toBe(401);
-    const security = await (await fetch(`${app.base}/admin/security`, { headers: { cookie: a.cookie } })).text();
+    const security = await (await fetch(`${app.base}/admin/security`, { headers: { cookie: rotated(ok) } })).text();
     expect(security).toContain('Niewykorzystane kody zapasowe: <strong>7</strong>');
   });
 
+  it('locks the account (not just the session) after repeated wrong codes from any session', async () => {
+    // Two pending sessions burn 5 attempts each: the 10th failure locks the account.
+    for (let round = 0; round < 2; round++) {
+      const { cookie } = await passwordLogin();
+      for (let i = 0; i < 5; i++) await postTotp(cookie, '000000');
+    }
+    const admin = findAdminByUsername(app.ctx.db, ADMIN_USER)!;
+    expect(totpLockedUntil(app.ctx.db, admin.id)).not.toBeNull();
+    // A correct code from a brand-new session is refused while the lock holds.
+    const fresh = await passwordLogin();
+    const page = await (await fetch(`${app.base}/admin/totp`, { headers: { cookie: fresh.cookie } })).text();
+    expect(page).toContain('tymczasowo zablokowane');
+    const refused = await postTotp(fresh.cookie, freshCode());
+    expect(refused.status).toBe(401);
+    expect(await refused.text()).toContain('zablokowane na 15 minut');
+    // Lock expiry (simulated) restores normal operation and the failure counter is reset by success.
+    app.ctx.db.prepare('UPDATE admins SET totp_locked_until = NULL WHERE id = ?').run(admin.id);
+    const again = await passwordLogin();
+    expect((await postTotp(again.cookie, freshCode())).status).toBe(303);
+    expect((app.ctx.db.prepare('SELECT totp_failed_count FROM admins WHERE id = ?').get(admin.id) as { totp_failed_count: number }).totp_failed_count).toBe(0);
+  });
+
   it('regenerating recovery codes requires a valid TOTP code and invalidates the old ones', async () => {
-    const { cookie } = await passwordLogin();
-    await postTotp(cookie, freshCode());
-    const csrf = await csrfFor(cookie, '/admin/security');
-    const s = { cookie, csrf };
+    const s = await loginWithTotp();
     expect((await adminPost(app, s, '/admin/security/totp/recovery', { code: '000000' })).status).toBe(400);
     const res = await adminPost(app, s, '/admin/security/totp/recovery', { code: freshCode() });
     expect(res.status).toBe(200);
@@ -186,14 +221,18 @@ describe('admin two-factor login flow', () => {
     recoveryCodes = fresh;
   });
 
-  it('disabling requires a code; afterwards the password alone logs in', async () => {
-    const { cookie } = await passwordLogin();
-    await postTotp(cookie, freshCode());
-    const s = { cookie, csrf: await csrfFor(cookie, '/admin/security') };
+  it('disabling requires a code, ends every other session, and afterwards the password alone logs in', async () => {
+    const s = await loginWithTotp();
+    const other = await loginWithTotp();          // a second verified session
+    const pending = await passwordLogin();         // and a pending one
     expect((await adminPost(app, s, '/admin/security/totp/disable', { code: '000000' })).status).toBe(400);
     expect(findAdminByUsername(app.ctx.db, ADMIN_USER)!.totp_enabled).toBe(true);
     expect((await adminPost(app, s, '/admin/security/totp/disable', { code: freshCode() })).status).toBe(200);
     expect(findAdminByUsername(app.ctx.db, ADMIN_USER)!.totp_enabled).toBe(false);
+    // The disabling session survives; the others (verified or pending) are gone rather than silently upgraded.
+    expect((await fetch(`${app.base}/admin`, { headers: { cookie: s.cookie }, redirect: 'manual' })).status).toBe(200);
+    expect((await fetch(`${app.base}/admin`, { headers: { cookie: other.cookie }, redirect: 'manual' })).headers.get('location')).toBe('/admin/login');
+    expect((await fetch(`${app.base}/admin`, { headers: { cookie: pending.cookie }, redirect: 'manual' })).headers.get('location')).toBe('/admin/login');
     const plain = await passwordLogin();
     expect(plain.location).toBe('/admin');
     expect((await fetch(`${app.base}/admin`, { headers: { cookie: plain.cookie }, redirect: 'manual' })).status).toBe(200);
@@ -212,6 +251,8 @@ describe('admin two-factor login flow', () => {
     });
     expect(stdout).toContain('TOTP disabled');
     expect(findAdminByUsername(app.ctx.db, ADMIN_USER)!.totp_enabled).toBe(false);
+    // The CLI also ends all sessions of that admin.
+    expect((await fetch(`${app.base}/admin`, { headers: { cookie: s.cookie }, redirect: 'manual' })).headers.get('location')).toBe('/admin/login');
   });
 });
 

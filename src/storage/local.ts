@@ -12,7 +12,7 @@ export class LocalStorage implements StorageBackend {
   readonly kind = 'local' as const;
 
   constructor(private readonly directory: string) {
-    fs.mkdirSync(directory, { recursive: true });
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   }
 
   private resolve(key: string): string {
@@ -27,7 +27,7 @@ export class LocalStorage implements StorageBackend {
     const full = this.resolve(key);
     const limiter = new LimitHashStream(opts.maxBytes);
     // 'wx' fails if the key already exists: duplicates can never overwrite.
-    const out = fs.createWriteStream(full, { flags: 'wx' });
+    const out = fs.createWriteStream(full, { flags: 'wx', mode: 0o600 });
     try {
       await pipeline(source, limiter, out);
     } catch (err) {
@@ -76,6 +76,8 @@ export class LocalStorage implements StorageBackend {
     let removed = 0;
     for (const entry of await fsp.readdir(this.directory, { withFileTypes: true })) {
       if (!entry.isFile()) continue;
+      // Only artefacts this application creates (data + tus sidecar); anything else is left alone.
+      if (!/^f_[A-Za-z0-9_-]{16}(\.json)?$/.test(entry.name)) continue;
       const key = entry.name.endsWith('.json') ? entry.name.slice(0, -5) : entry.name;
       if (opts.isLive(key)) continue;
       const full = path.join(this.directory, entry.name);

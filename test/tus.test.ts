@@ -172,14 +172,19 @@ describe('resumable uploads (tus)', () => {
     expect(getFile(app.ctx.db, id)!.status).toBe('complete');
 
     if (app.ctx.storage.kind === 'local') {
-      const stray = app.fileOnDisk('f_strayorphan000000');
+      const stray = app.fileOnDisk('f_strayorphan00000');
       fs.writeFileSync(stray, 'junk');
       fs.writeFileSync(`${stray}.json`, '{}');
       const old = new Date(Date.now() - 3_600_000);
       fs.utimesSync(stray, old, old); fs.utimesSync(`${stray}.json`, old, old);
+      const foreign = app.fileOnDisk('inletbox.sqlite'); // e.g. a misplaced database: never ours to delete
+      fs.writeFileSync(foreign, 'not ours');
+      fs.utimesSync(foreign, old, old);
       const before = await runCleanup(app.ctx, { ttlMs: 60_000 });
       expect(before.orphans).toBe(2);
       expect(fs.existsSync(stray)).toBe(false);
+      expect(fs.existsSync(foreign)).toBe(true);
+      fs.rmSync(foreign);
     }
 
     await app.ctx.storage.delete(id); // simulate storage loss

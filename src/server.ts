@@ -11,6 +11,8 @@ import { createStorage } from './storage/index.js';
 export interface RunningServer { server: http.Server; ctx: AppContext; close: () => Promise<void> }
 
 export async function startServer(env: NodeJS.ProcessEnv = process.env, listen: { host?: string; port?: number } = {}): Promise<RunningServer> {
+  // Everything this process writes (database, uploads, tus sidecars) is private to its user.
+  process.umask(0o077);
   const cfg = loadConfig(env);
   setLogLevel(cfg.logLevel);
   const db = openDatabase(cfg.databasePath);
@@ -26,11 +28,13 @@ export async function startServer(env: NodeJS.ProcessEnv = process.env, listen: 
   // handlers call res.writeContinue() once they accept the upload.
   server.on('checkContinue', (req, res) => app(req, res));
   // Large uploads may legitimately take hours: disable the per-request timeout
-  // (Node defaults to 5 minutes) but keep header parsing bounded.
+  // (Node defaults to 5 minutes). Header parsing and socket *inactivity* stay
+  // bounded (slowloris): an active upload keeps the socket busy, a trickling
+  // login form does not.
   server.requestTimeout = 0;
   server.headersTimeout = 60_000;
   server.keepAliveTimeout = 75_000;
-  server.timeout = 0;
+  server.timeout = 300_000;
 
   let cleanupTimer: NodeJS.Timeout | undefined;
   let cleanupRunning = false;

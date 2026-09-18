@@ -13,6 +13,7 @@ export function setLogLevel(level: Level): void { current = level; }
 export function redact(value: string): string {
   return value
     .replace(/\/u\/[^/?#\s]+/g, '/u/[redacted]')
+    .replace(/(\/api\/upload\/)[^?#\s]+/g, '$1[filename]')
     .replace(/([?&](?:token|access_token|sig)=)[^&#\s]*/gi, '$1[redacted]');
 }
 
