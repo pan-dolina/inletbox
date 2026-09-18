@@ -36,3 +36,6 @@ Thumbs.db
 *.log
 npm-debug.log*
 tmp/
+
+# Claude Code project notes (may contain internal deployment details)
+CLAUDE.md
