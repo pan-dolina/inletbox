@@ -1,10 +1,38 @@
+# Dependencies and build output
 node_modules/
 dist/
+*.tsbuildinfo
+coverage/
+
+# Runtime data: SQLite database and uploaded files (see DATA_DIR)
 data/
-.env
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
-coverage/
-.claude/
+*.sqlite-journal
+
+# Local configuration and secrets (.env.example stays tracked)
+.env
+.env.*
+!.env.example
+docker-compose.override.yml
+*.pem
+*.key
+*.crt
+
+# Instance-specific branding assets (logo etc.), mounted at runtime
 branding/
+
+# Local tooling, editors, OS files
+.claude/
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs and scratch
+*.log
+npm-debug.log*
+tmp/
