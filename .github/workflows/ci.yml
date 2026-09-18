@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Typecheck, tests (local + MinIO), Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Tests (local storage)
+        run: npm test
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 127.0.0.1:9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            quay.io/minio/minio:latest server /data
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:9000/minio/health/live && break; sleep 1; done
+      - name: Tests (S3 / MinIO)
+        run: TEST_S3=1 npm test
+        env:
+          TEST_S3_ENDPOINT: http://127.0.0.1:9000
+      - name: Docker build
+        run: docker build -t inletbox:ci .
