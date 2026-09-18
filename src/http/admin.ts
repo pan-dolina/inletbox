@@ -16,6 +16,7 @@ import { failUpload, getFile, listFilesForCase, listUploadingForLink, markDelete
 import { createLink, getLink, listLinksForCase, revokeLink } from '../services/links.js';
 import { StorageNotFoundError } from '../storage/index.js';
 import { otpauthUri } from '../totp.js';
+import { t, type MessageKey } from '../i18n.js';
 import type { AppContext } from './context.js';
 import { SESSION_COOKIE } from './context.js';
 import { csrfProtect, loginLimiter, requireAdmin, sessionCookie } from './middleware.js';
@@ -23,7 +24,12 @@ import { adminNav, auditPage, casePage, casesPage, errorPage, loginPage, type Ad
 import { securityPage, totpLoginPage, type SecurityPageData } from './views/security.js';
 
 function viewCtx(req: Request): AdminViewContext {
-  return { csrfToken: req.session!.csrfToken, username: req.session!.admin.username };
+  return { lang: req.lang, csrfToken: req.session!.csrfToken, username: req.session!.admin.username, path: req.originalUrl };
+}
+
+function sendError(req: Request, res: Response, titleKey: MessageKey, messageKey: MessageKey, status = 404): void {
+  const e = errorPage(req.lang, t(req.lang, titleKey), t(req.lang, messageKey), status, req.originalUrl);
+  res.status(e.status).type('html').send(e.body);
 }
 
 function field(req: Request, name: string): string {
@@ -53,7 +59,7 @@ export function adminRouter(ctx: AppContext): Router {
   // ---- login / logout ----------------------------------------------------
   r.get('/login', (req, res) => {
     if (req.session) return res.redirect(req.session.totpVerified ? '/admin' : '/admin/totp');
-    res.type('html').send(loginPage({}));
+    res.type('html').send(loginPage(req.lang, {}));
   });
 
   r.post('/login', loginFailures, (req, res) => {
@@ -63,7 +69,7 @@ export function adminRouter(ctx: AppContext): Router {
     if (!admin) {
       // The attempted username is deliberately not recorded: that field routinely receives passwords typed into the wrong box.
       audit(ctx.db, { actorType: 'system', action: 'admin.login_failed', ip: req.ip });
-      res.status(401).type('html').send(loginPage({ error: 'Nieprawidłowa nazwa użytkownika lub hasło.' }));
+      res.status(401).type('html').send(loginPage(req.lang, { error: t(req.lang, 'login.failed') }));
       return;
     }
     // A fresh session id on every login (no fixation); it is only "pending" until the second factor passes.
@@ -93,7 +99,7 @@ export function adminRouter(ctx: AppContext): Router {
   r.get('/totp', (req, res) => {
     if (req.session!.totpVerified) return res.redirect('/admin');
     const lockedUntil = totpLockedUntil(ctx.db, req.session!.admin.id);
-    res.type('html').send(totpLoginPage({ csrfToken: req.session!.csrfToken, lockedUntil: lockedUntil ?? undefined }));
+    res.type('html').send(totpLoginPage(req.lang, { csrfToken: req.session!.csrfToken, lockedUntil: lockedUntil ?? undefined }));
   });
 
   r.post('/totp', loginFailures, (req, res) => {
@@ -110,14 +116,11 @@ export function adminRouter(ctx: AppContext): Router {
     if (result.status === 'locked') {
       audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.totp_locked', ip: req.ip, details: { account_locked_until: result.accountLockedUntil } });
       clearSessionCookie(res);
-      const msg = result.accountLockedUntil
-        ? 'Zbyt wiele błędnych kodów dla tego konta. Logowanie drugim składnikiem jest zablokowane na 15 minut.'
-        : 'Zbyt wiele błędnych kodów. Zaloguj się ponownie.';
-      res.status(401).type('html').send(loginPage({ error: msg }));
+      res.status(401).type('html').send(loginPage(req.lang, { error: t(req.lang, result.accountLockedUntil ? 'login.account_locked' : 'login.too_many_codes') }));
       return;
     }
     audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.totp_failed', ip: req.ip });
-    res.status(401).type('html').send(totpLoginPage({ csrfToken: session.csrfToken, error: 'Nieprawidłowy kod.', attemptsLeft: MAX_TOTP_ATTEMPTS - session.totpAttempts - 1 }));
+    res.status(401).type('html').send(totpLoginPage(req.lang, { csrfToken: session.csrfToken, error: t(req.lang, 'totp.invalid'), attemptsLeft: MAX_TOTP_ATTEMPTS - session.totpAttempts - 1 }));
   });
 
   // From here on the second factor must have been passed.
@@ -134,7 +137,7 @@ export function adminRouter(ctx: AppContext): Router {
       enrol = { qrSvg, secret: pending, uri };
     }
     res.status(status).type('html').send(securityPage({
-      csrfToken: session.csrfToken, username: session.admin.username, nav: adminNav(session.admin.username, session.csrfToken),
+      lang: req.lang, csrfToken: session.csrfToken, username: session.admin.username, nav: adminNav(viewCtx(req)),
       totpEnabled: session.admin.totp_enabled, totpRequired: ctx.cfg.adminRequireTotp, issuer: ctx.cfg.brand.name,
       recoveryLeft: session.admin.totp_enabled ? remainingRecoveryCodes(ctx.db, session.admin.id) : 0,
       enrol, ...extra,
@@ -156,41 +159,41 @@ export function adminRouter(ctx: AppContext): Router {
     const session = req.session!;
     const codes = confirmTotpEnrolment(ctx.db, session.admin.id, field(req, 'code'));
     if (!codes) {
-      renderSecurity(req, res, { error: 'Kod nie pasuje. Sprawdź czas w telefonie i spróbuj ponownie.' }, 400).catch(next);
+      renderSecurity(req, res, { error: t(req.lang, 'security.msg.code_mismatch') }, 400).catch(next);
       return;
     }
     // Other sessions of this admin did not prove the second factor: end them.
     destroyOtherSessions(ctx.db, session.admin.id, req.sessionId!);
     session.admin.totp_enabled = true;
     audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.totp_enabled', ip: req.ip });
-    renderSecurity(req, res, { ok: 'Uwierzytelnianie dwuskładnikowe jest włączone.', recoveryCodes: codes }).catch(next);
+    renderSecurity(req, res, { ok: t(req.lang, 'security.msg.enabled'), recoveryCodes: codes }).catch(next);
   });
 
   r.post('/security/totp/recovery', (req, res, next) => {
     const session = req.session!;
     const codes = regenerateRecoveryCodes(ctx.db, session.admin.id, field(req, 'code'));
     if (!codes) {
-      renderSecurity(req, res, { error: 'Nieprawidłowy kod.' }, 400).catch(next);
+      renderSecurity(req, res, { error: t(req.lang, 'security.msg.invalid_code') }, 400).catch(next);
       return;
     }
     audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.recovery_codes_regenerated', ip: req.ip });
-    renderSecurity(req, res, { ok: 'Wygenerowano nowe kody zapasowe.', recoveryCodes: codes }).catch(next);
+    renderSecurity(req, res, { ok: t(req.lang, 'security.msg.regenerated'), recoveryCodes: codes }).catch(next);
   });
 
   r.post('/security/totp/disable', (req, res, next) => {
     const session = req.session!;
     if (ctx.cfg.adminRequireTotp) {
-      renderSecurity(req, res, { error: 'Ta instancja wymaga TOTP (ADMIN_REQUIRE_TOTP); nie można go wyłączyć.' }, 400).catch(next);
+      renderSecurity(req, res, { error: t(req.lang, 'security.msg.required') }, 400).catch(next);
       return;
     }
     if (!disableTotp(ctx.db, session.admin.id, field(req, 'code'), req.sessionId!)) {
       audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.totp_failed', ip: req.ip, details: { context: 'disable' } });
-      renderSecurity(req, res, { error: 'Nieprawidłowy kod.' }, 400).catch(next);
+      renderSecurity(req, res, { error: t(req.lang, 'security.msg.invalid_code') }, 400).catch(next);
       return;
     }
     session.admin.totp_enabled = false;
     audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.totp_disabled', ip: req.ip });
-    renderSecurity(req, res, { ok: 'Uwierzytelnianie dwuskładnikowe zostało wyłączone.' }).catch(next);
+    renderSecurity(req, res, { ok: t(req.lang, 'security.msg.disabled') }).catch(next);
   });
 
   // With ADMIN_REQUIRE_TOTP, admins without a second factor may only reach the security page.
@@ -220,11 +223,7 @@ export function adminRouter(ctx: AppContext): Router {
 
   function renderCase(req: Request, res: Response, caseId: string, extra: { error?: string; ok?: string; newLink?: { label: string; url: string } } = {}, status = 200): void {
     const c = getCase(ctx.db, caseId);
-    if (!c) {
-      const e = errorPage('Nie znaleziono', 'Taka sprawa nie istnieje.');
-      res.status(e.status).type('html').send(e.body);
-      return;
-    }
+    if (!c) return sendError(req, res, 'error.not_found.title', 'error.case_missing');
     res.status(status).type('html').send(casePage(viewCtx(req), { case: c, links: listLinksForCase(ctx.db, c.id), files: listFilesForCase(ctx.db, c.id), cfg: ctx.cfg, ...extra }));
   }
 
@@ -241,7 +240,7 @@ export function adminRouter(ctx: AppContext): Router {
       const c = updateCase(ctx.db, id, { name: field(req, 'name'), description: field(req, 'description') });
       if (!c) return renderCase(req, res, '');
       audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'case.update', caseId: id, ip: req.ip });
-      renderCase(req, res, id, { ok: 'Zapisano.' });
+      renderCase(req, res, id, { ok: t(req.lang, 'case.saved') });
     } catch (err) {
       renderCase(req, res, id, { error: (err as Error).message }, 400);
     }
@@ -263,11 +262,11 @@ export function adminRouter(ctx: AppContext): Router {
     if (!id) return renderCase(req, res, '');
     const c = getCase(ctx.db, id);
     if (!c) return renderCase(req, res, '');
-    if (c.status !== 'open') return renderCase(req, res, id, { error: 'Sprawa jest zamknięta – otwórz ją ponownie, aby generować linki.' }, 400);
+    if (c.status !== 'open') return renderCase(req, res, id, { error: t(req.lang, 'case.closed_no_links') }, 400);
     try {
       const expiresRaw = field(req, 'expires_at').trim();
       const expiresAt = expiresRaw ? new Date(expiresRaw.endsWith('Z') ? expiresRaw : `${expiresRaw}Z`) : null;
-      if (expiresAt && Number.isNaN(expiresAt.getTime())) throw new Error('Nieprawidłowa data ważności');
+      if (expiresAt && Number.isNaN(expiresAt.getTime())) throw new Error(req.lang === 'pl' ? 'Nieprawidłowa data ważności' : 'Invalid expiry date');
       const maxFilesRaw = field(req, 'max_files').trim();
       const { link, url } = createLink(ctx.db, ctx.cfg, {
         caseId: id,
@@ -288,11 +287,7 @@ export function adminRouter(ctx: AppContext): Router {
   r.post('/links/:id/revoke', async (req, res) => {
     const id = validId(req.params.id);
     const link = id ? getLink(ctx.db, id) : null;
-    if (!link) {
-      const e = errorPage('Nie znaleziono', 'Taki link nie istnieje.');
-      res.status(e.status).type('html').send(e.body);
-      return;
-    }
+    if (!link) return sendError(req, res, 'error.not_found.title', 'error.link_missing');
     if (revokeLink(ctx.db, link.id)) {
       audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'link.revoke', caseId: link.case_id, linkId: link.id, ip: req.ip });
       // In-flight uploads on a revoked link are discarded immediately.
@@ -308,20 +303,12 @@ export function adminRouter(ctx: AppContext): Router {
   r.get('/files/:id/download', async (req, res) => {
     const id = validId(req.params.id);
     const file = id ? getFile(ctx.db, id) : null;
-    if (!file || file.status !== 'complete') {
-      const e = errorPage('Nie znaleziono', 'Plik nie istnieje lub nie jest dostępny.');
-      res.status(e.status).type('html').send(e.body);
-      return;
-    }
+    if (!file || file.status !== 'complete') return sendError(req, res, 'error.not_found.title', 'error.file_missing');
     let stream;
     try {
       stream = await ctx.storage.get(file.id);
     } catch (err) {
-      if (err instanceof StorageNotFoundError) {
-        const e = errorPage('Brak pliku w storage', 'Metadane istnieją, ale obiekt zniknął ze storage. Uruchom sprzątanie, aby oznaczyć plik jako brakujący.', 410);
-        res.status(e.status).type('html').send(e.body);
-        return;
-      }
+      if (err instanceof StorageNotFoundError) return sendError(req, res, 'error.storage_missing.title', 'error.storage_missing', 410);
       throw err;
     }
     audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'file.download', caseId: file.case_id, linkId: file.link_id, fileId: file.id, ip: req.ip });
@@ -344,11 +331,7 @@ export function adminRouter(ctx: AppContext): Router {
   r.post('/files/:id/delete', async (req, res) => {
     const id = validId(req.params.id);
     const file = id ? getFile(ctx.db, id) : null;
-    if (!file) {
-      const e = errorPage('Nie znaleziono', 'Plik nie istnieje.');
-      res.status(e.status).type('html').send(e.body);
-      return;
-    }
+    if (!file) return sendError(req, res, 'error.not_found.title', 'error.file_not_exist');
     if (markDeleted(ctx.db, file.id)) {
       await ctx.storage.delete(file.id);
       audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'file.delete', caseId: file.case_id, linkId: file.link_id, fileId: file.id, ip: req.ip, details: { name: file.original_name, size: file.size } });

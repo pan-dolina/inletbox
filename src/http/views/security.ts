@@ -1,26 +1,29 @@
+import { translator, type Lang } from '../../i18n.js';
 import { html, layout, raw, type SafeHtml } from '../html.js';
 
 /** Second step of the login: the session exists but the TOTP code is still missing. */
-export function totpLoginPage(opts: { csrfToken: string; error?: string; attemptsLeft?: number; lockedUntil?: string }): string {
+export function totpLoginPage(lang: Lang, opts: { csrfToken: string; error?: string; attemptsLeft?: number; lockedUntil?: string }): string {
+  const t = translator(lang);
   return layout({
-    title: 'Drugi składnik',
+    lang, title: t('totp.title'), path: '/admin/totp',
     body: html`<section class="card narrow">
-      <h1>Kod z aplikacji uwierzytelniającej</h1>
-      ${opts.error ? html`<div class="flash flash-error">${opts.error}${opts.attemptsLeft != null ? html` Pozostałe próby: ${opts.attemptsLeft}.` : ''}</div>` : ''}
-      ${opts.lockedUntil ? html`<div class="flash flash-error">Konto jest tymczasowo zablokowane po wielu błędnych kodach (do ${opts.lockedUntil.replace('T', ' ').slice(0, 16)} UTC).</div>` : ''}
+      <h1>${t('totp.title')}</h1>
+      ${opts.error ? html`<div class="flash flash-error">${opts.error}${opts.attemptsLeft != null ? html` ${t('totp.attempts_left', { n: opts.attemptsLeft })}` : ''}</div>` : ''}
+      ${opts.lockedUntil ? html`<div class="flash flash-error">${t('totp.locked_until', { until: opts.lockedUntil.replace('T', ' ').slice(0, 16) })}</div>` : ''}
       <form method="post" action="/admin/totp">
         <input type="hidden" name="_csrf" value="${opts.csrfToken}">
-        <label>Kod (6 cyfr) lub kod zapasowy
+        <label>${t('totp.code_label')}
           <input name="code" required autocomplete="one-time-code" inputmode="numeric" autofocus pattern="[0-9a-zA-Z\\- ]{6,12}">
         </label>
-        <button class="btn btn-primary" type="submit">Potwierdź</button>
+        <button class="btn btn-primary" type="submit">${t('totp.confirm')}</button>
       </form>
-      <form method="post" action="/admin/logout" class="inline"><input type="hidden" name="_csrf" value="${opts.csrfToken}"><button class="btn btn-link btn-link-muted" type="submit">Anuluj i wyloguj</button></form>
+      <form method="post" action="/admin/logout" class="inline"><input type="hidden" name="_csrf" value="${opts.csrfToken}"><button class="btn btn-link btn-link-muted" type="submit">${t('totp.cancel_logout')}</button></form>
     </section>`,
   });
 }
 
 export interface SecurityPageData {
+  lang: Lang;
   csrfToken: string;
   username: string;
   nav: SafeHtml;
@@ -37,66 +40,66 @@ export interface SecurityPageData {
 }
 
 export function securityPage(d: SecurityPageData): string {
+  const t = translator(d.lang);
   const csrf = html`<input type="hidden" name="_csrf" value="${d.csrfToken}">`;
   return layout({
-    title: 'Bezpieczeństwo',
-    nav: d.nav,
+    lang: d.lang, title: t('nav.security'), nav: d.nav, path: '/admin/security',
     scripts: ['/static/admin.js'],
     body: html`
       <section class="card">
-        <h1>Bezpieczeństwo konta „${d.username}”</h1>
+        <h1>${t('security.title', { user: d.username })}</h1>
         ${d.error ? html`<div class="flash flash-error">${d.error}</div>` : ''}
         ${d.ok ? html`<div class="flash flash-ok">${d.ok}</div>` : ''}
-        ${d.totpRequired && !d.totpEnabled ? html`<div class="warning">Ta instancja wymaga uwierzytelniania dwuskładnikowego. Do czasu włączenia TOTP panel jest niedostępny.</div>` : ''}
-        <p>Uwierzytelnianie dwuskładnikowe (TOTP, RFC 6238): <strong>${d.totpEnabled ? 'włączone' : 'wyłączone'}</strong>.
-        ${d.totpEnabled ? html`Niewykorzystane kody zapasowe: <strong>${d.recoveryLeft}</strong>.` : ''}</p>
+        ${d.totpRequired && !d.totpEnabled ? html`<div class="warning">${t('security.required_notice')}</div>` : ''}
+        <p>${raw(t('security.status', { state: `<strong>${d.totpEnabled ? t('security.enabled') : t('security.disabled')}</strong>` }))}
+        ${d.totpEnabled ? raw(t('security.recovery_left', { n: `<strong>${d.recoveryLeft}</strong>` })) : ''}</p>
       </section>
 
       ${d.recoveryCodes ? html`<section class="card highlight">
-        <h2>Kody zapasowe</h2>
-        <p><strong>Zapisz je teraz w bezpiecznym miejscu.</strong> Każdy działa jeden raz i zastępuje kod z aplikacji, gdy stracisz do niej dostęp. Nie będą pokazane ponownie.</p>
+        <h2>${t('security.recovery.title')}</h2>
+        <p><strong>${t('security.recovery.intro').split('. ')[0]}.</strong> ${t('security.recovery.intro').split('. ').slice(1).join('. ')}</p>
         <pre class="mono" data-copy-source>${d.recoveryCodes.join('\n')}</pre>
-        <p><button class="btn" type="button" data-copy>Kopiuj</button></p>
+        <p><button class="btn" type="button" data-copy>${t('common.copy')}</button></p>
       </section>` : ''}
 
       ${!d.totpEnabled && !d.enrol ? html`<section class="card">
-        <h2>Włącz TOTP</h2>
-        <p class="small">Potrzebna jest aplikacja uwierzytelniająca (np. Aegis, Google Authenticator, 1Password, Bitwarden). Po włączeniu logowanie wymaga hasła i bieżącego kodu.</p>
-        <form method="post" action="/admin/security/totp/begin">${csrf}<button class="btn btn-primary" type="submit">Rozpocznij konfigurację</button></form>
+        <h2>${t('security.enable.title')}</h2>
+        <p class="small">${t('security.enable.intro')}</p>
+        <form method="post" action="/admin/security/totp/begin">${csrf}<button class="btn btn-primary" type="submit">${t('security.enable.start')}</button></form>
       </section>` : ''}
 
       ${d.enrol ? html`<section class="card">
-        <h2>Krok 1: zeskanuj kod w aplikacji</h2>
+        <h2>${t('security.step1')}</h2>
         <div class="row">
           <div class="qr">${raw(d.enrol.qrSvg)}</div>
           <div class="grow small">
-            <p>Albo wpisz klucz ręcznie:</p>
+            <p>${t('security.manual_key')}</p>
             <p class="mono breakable">${d.enrol.secret.replace(/(.{4})/g, '$1 ').trim()}</p>
-            <p class="muted">Typ: TOTP, SHA-1, 6 cyfr, 30 s. Wystawca: ${d.issuer}, konto: ${d.username}.</p>
-            <p><a href="${d.enrol.uri}">Otwórz w aplikacji uwierzytelniającej</a> (na telefonie)</p>
+            <p class="muted">${t('security.key_params', { issuer: d.issuer, user: d.username })}</p>
+            <p><a href="${d.enrol.uri}">${t('security.open_in_app')}</a> ${t('security.on_phone')}</p>
           </div>
         </div>
-        <h2>Krok 2: potwierdź kodem</h2>
+        <h2>${t('security.step2')}</h2>
         <form method="post" action="/admin/security/totp/confirm" class="row">${csrf}
-          <label>Kod z aplikacji <input name="code" required autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 ]{6,7}" autofocus></label>
-          <button class="btn btn-primary" type="submit">Włącz TOTP</button>
+          <label>${t('security.code_from_app')} <input name="code" required autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 ]{6,7}" autofocus></label>
+          <button class="btn btn-primary" type="submit">${t('security.enable.submit')}</button>
         </form>
-        <p class="muted small">Klucz jest tymczasowy do czasu potwierdzenia; ponowne rozpoczęcie konfiguracji generuje nowy.</p>
+        <p class="muted small">${t('security.pending_note')}</p>
       </section>` : ''}
 
       ${d.totpEnabled ? html`<section class="card">
-        <h2>Kody zapasowe</h2>
+        <h2>${t('security.recovery.title')}</h2>
         <form method="post" action="/admin/security/totp/recovery" class="row">${csrf}
-          <label>Bieżący kod z aplikacji <input name="code" required autocomplete="one-time-code" inputmode="numeric"></label>
-          <button class="btn" type="submit">Wygeneruj nowe kody (stare przestaną działać)</button>
+          <label>${t('security.current_code')} <input name="code" required autocomplete="one-time-code" inputmode="numeric"></label>
+          <button class="btn" type="submit">${t('security.regenerate')}</button>
         </form>
       </section>
       <section class="card">
-        <h2>Wyłącz TOTP</h2>
-        <p class="small">Wymaga bieżącego kodu z aplikacji albo kodu zapasowego: sama sesja (np. skradzione ciasteczko) nie wystarczy. Gdy dostęp do aplikacji i kodów zapasowych jest utracony, operator może użyć <code>node dist/cli.js disable-totp &lt;użytkownik&gt;</code> na serwerze.</p>
-        <form method="post" action="/admin/security/totp/disable" class="row" data-confirm="Wyłączyć uwierzytelnianie dwuskładnikowe?">${csrf}
-          <label>Kod <input name="code" required autocomplete="one-time-code"></label>
-          <button class="btn btn-danger" type="submit">Wyłącz</button>
+        <h2>${t('security.disable.title')}</h2>
+        <p class="small">${raw(t('security.disable.intro', { cmd: '<code>node dist/cli.js disable-totp &lt;user&gt;</code>' }))}</p>
+        <form method="post" action="/admin/security/totp/disable" class="row" data-confirm="${t('security.disable.confirm')}">${csrf}
+          <label>${t('security.disable.code')} <input name="code" required autocomplete="one-time-code"></label>
+          <button class="btn btn-danger" type="submit">${t('security.disable.submit')}</button>
         </form>
       </section>` : ''}`,
   });

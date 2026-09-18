@@ -32,7 +32,7 @@ describe('link lifecycle', () => {
     app.ctx.db.prepare('UPDATE links SET expires_at = ? WHERE id = ?').run(new Date(Date.now() - 1000).toISOString(), l.id);
     const page = await fetch(l.url);
     expect(page.status).toBe(403);
-    expect(await page.text()).toContain('wygasł');
+    expect(await page.text()).toContain('expired');
     const api = await fetch(`${app.base}/api/files`, { headers: bearer(l.token) });
     expect(api.status).toBe(403);
     expect((await api.json() as { error: string }).error).toBe('link_expired');

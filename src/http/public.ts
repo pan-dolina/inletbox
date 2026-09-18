@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { TOKEN_RE } from '../crypto.js';
+import { t } from '../i18n.js';
 import { log } from '../log.js';
 import { audit } from '../services/audit.js';
 import { completeUpload, failUpload, LimitError, listFilesForLink, reserveUpload, sanitizeFilename } from '../services/files.js';
@@ -45,18 +46,18 @@ export function publicRouter(ctx: AppContext): Router {
     const token = String(req.params.token ?? '');
     const resolved = TOKEN_RE.test(token) ? resolveToken(ctx.db, token) : null;
     if (!resolved) {
-      res.status(404).type('html').send(linkUnavailablePage('Nieprawidłowy link', 'Ten link do uploadu nie istnieje.'));
+      res.status(404).type('html').send(linkUnavailablePage(req.lang, t(req.lang, 'link.invalid.title'), t(req.lang, 'link.invalid')));
       return;
     }
     if (resolved.state !== 'active') {
       const m = LINK_STATE_MESSAGES[resolved.state];
-      res.status(m.status).type('html').send(linkUnavailablePage('Link niedostępny', m.message));
+      res.status(m.status).type('html').send(linkUnavailablePage(req.lang, t(req.lang, 'link.unavailable.title'), t(req.lang, m.message)));
       return;
     }
     touchLink(ctx.db, resolved.link.id);
     res.setHeader('Cache-Control', 'no-store');
     res.type('html').send(uploadPage({
-      cfg: ctx.cfg, case: resolved.case, link: resolved.link, token,
+      lang: req.lang, path: req.originalUrl, cfg: ctx.cfg, case: resolved.case, link: resolved.link, token,
       limits: effectiveLimits(ctx.cfg, resolved.link), usage: linkUsage(ctx.db, resolved.link.id),
     }));
   });

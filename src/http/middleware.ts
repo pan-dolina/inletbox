@@ -2,6 +2,7 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import { safeEqual } from '../crypto.js';
+import { isLang, LANG_COOKIE, negotiateLang, t, type MessageKey } from '../i18n.js';
 import { log, redact } from '../log.js';
 import { getSession } from '../services/auth.js';
 import { resolveToken, touchLink, type LinkState } from '../services/links.js';
@@ -52,6 +53,24 @@ export function requestLogger(): RequestHandler {
     });
     next();
   };
+}
+
+// ---------------------------------------------------------------------------
+// Language: explicit cookie (set by the footer switcher) beats Accept-Language; English is the default.
+// ---------------------------------------------------------------------------
+
+export function languageMiddleware(): RequestHandler {
+  return (req, _res, next) => {
+    const fromCookie = parseCookies(req.headers.cookie)[LANG_COOKIE];
+    req.lang = isLang(fromCookie) ? fromCookie : negotiateLang(req.headers['accept-language']);
+    next();
+  };
+}
+
+export function langCookie(ctx: AppContext, lang: string): string {
+  const parts = [`${LANG_COOKIE}=${lang}`, 'Path=/', 'SameSite=Lax', `Max-Age=${365 * 24 * 3600}`];
+  if (ctx.cfg.cookieSecure) parts.push('Secure');
+  return parts.join('; ');
 }
 
 // ---------------------------------------------------------------------------
@@ -123,13 +142,13 @@ export function csrfProtect(ctx: AppContext): RequestHandler {
     const origin = req.headers.origin;
     const reject = (reason: string) => {
       log.warn('csrf: request rejected', { reason, origin, fetchSite, host: req.headers.host, path: req.path });
-      res.status(403).type('text/plain').send('Cross-site request blocked');
+      res.status(403).type('text/plain').send(t(req.lang, 'error.cross_site'));
     };
     if (fetchSite && !['same-origin', 'none'].includes(String(fetchSite))) return reject('sec-fetch-site');
     if (origin && origin !== 'null' && origin !== expectedOrigin && origin !== `${req.protocol}://${req.headers.host}`) return reject('origin');
     const token = (req.body as Record<string, unknown> | undefined)?._csrf;
     if (!req.session || typeof token !== 'string' || !safeEqual(token, req.session.csrfToken)) {
-      res.status(403).type('text/plain').send('Invalid CSRF token');
+      res.status(403).type('text/plain').send(t(req.lang, 'error.csrf'));
       return;
     }
     next();
@@ -186,10 +205,10 @@ export function extractBearer(req: Request): string | null {
   return m ? m[1]! : null;
 }
 
-export const LINK_STATE_MESSAGES: Record<Exclude<LinkState, 'active'>, { status: number; code: string; message: string }> = {
-  expired: { status: 403, code: 'link_expired', message: 'Ten link wygasł.' },
-  revoked: { status: 403, code: 'link_revoked', message: 'Ten link został unieważniony.' },
-  case_closed: { status: 403, code: 'case_closed', message: 'Sprawa została zamknięta i nie przyjmuje już plików.' },
+export const LINK_STATE_MESSAGES: Record<Exclude<LinkState, 'active'>, { status: number; code: string; message: MessageKey }> = {
+  expired: { status: 403, code: 'link_expired', message: 'link.expired' },
+  revoked: { status: 403, code: 'link_revoked', message: 'link.revoked' },
+  case_closed: { status: 403, code: 'case_closed', message: 'link.case_closed' },
 };
 
 /**
@@ -210,7 +229,7 @@ export function requireLinkBearer(ctx: AppContext): RequestHandler {
     }
     if (resolved.state !== 'active') {
       const m = LINK_STATE_MESSAGES[resolved.state];
-      res.status(m.status).json({ error: m.code, message: m.message });
+      res.status(m.status).json({ error: m.code, message: t(req.lang, m.message) });
       return;
     }
     touchLink(ctx.db, resolved.link.id);

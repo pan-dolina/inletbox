@@ -76,7 +76,7 @@ describe('branded instance', () => {
     const html = await res.text();
     expect(html).toContain('otpauth://totp/Acme%20%3CDrop%3E%3Aadmin?');
     expect(html).toContain('issuer=Acme+%3CDrop%3E');
-    expect(html).toContain('Wystawca: Acme &lt;Drop&gt;');
+    expect(html).toContain('Issuer: Acme &lt;Drop&gt;');
   });
 });
 

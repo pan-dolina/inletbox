@@ -3,6 +3,12 @@
   'use strict';
 
   var cfg = JSON.parse(document.getElementById('inletbox-config').textContent);
+  var M = cfg.i18n || {};
+  function msg(key, params) {
+    var s = M[key] || key;
+    Object.keys(params || {}).forEach(function (k) { s = s.replace('{' + k + '}', params[k]); });
+    return s;
+  }
   var token = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
   var authHeaders = { Authorization: 'Bearer ' + token };
 
@@ -10,6 +16,7 @@
   var input = document.getElementById('file-input');
   var queue = document.getElementById('queue');
   var filesBody = document.querySelector('#files-table tbody');
+  var headers = Array.prototype.map.call(document.querySelectorAll('#files-table thead th'), function (th) { return th.textContent; });
 
   function fmtSize(b) {
     if (b == null) return '—';
@@ -21,7 +28,7 @@
   function fmtDate(iso) {
     if (!iso) return '—';
     var d = new Date(iso);
-    return d.toLocaleString();
+    return d.toLocaleString(cfg.lang === 'pl' ? 'pl-PL' : 'en-GB');
   }
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -37,23 +44,23 @@
       .then(function (data) {
         filesBody.textContent = '';
         if (!data.files.length) {
-          var tr = el('tr'); var td = el('td', 'muted', 'Brak przesłanych plików.'); td.colSpan = 4; tr.appendChild(td); filesBody.appendChild(tr);
+          var tr = el('tr'); var td = el('td', 'muted', msg('upload.none_yet')); td.colSpan = 4; tr.appendChild(td); filesBody.appendChild(tr);
           return;
         }
         data.files.forEach(function (f) {
           var tr = el('tr');
-          var tdName = el('td', 'filename', f.name); tdName.setAttribute('data-label', 'Nazwa');
-          var tdSize = el('td', null, fmtSize(f.size)); tdSize.setAttribute('data-label', 'Rozmiar');
-          var tdDate = el('td', null, fmtDate(f.completed_at || f.created_at)); tdDate.setAttribute('data-label', 'Data');
-          var tdStatus = el('td'); tdStatus.setAttribute('data-label', 'Status');
-          tdStatus.appendChild(el('span', 'badge badge-' + f.status, f.status === 'complete' ? 'ukończony' : 'w trakcie'));
+          var tdName = el('td', 'filename', f.name); tdName.setAttribute('data-label', headers[0]);
+          var tdSize = el('td', null, fmtSize(f.size)); tdSize.setAttribute('data-label', headers[1]);
+          var tdDate = el('td', null, fmtDate(f.completed_at || f.created_at)); tdDate.setAttribute('data-label', headers[2]);
+          var tdStatus = el('td'); tdStatus.setAttribute('data-label', headers[3]);
+          tdStatus.appendChild(el('span', 'badge badge-' + f.status, msg(f.status === 'complete' ? 'upload.js.status.complete' : 'upload.js.status.uploading')));
           tr.appendChild(tdName); tr.appendChild(tdSize); tr.appendChild(tdDate); tr.appendChild(tdStatus);
           filesBody.appendChild(tr);
         });
       })
       .catch(function (err) {
         filesBody.textContent = '';
-        var tr = el('tr'); var td = el('td', 'muted', 'Nie udało się pobrać listy: ' + err.message); td.colSpan = 4; tr.appendChild(td); filesBody.appendChild(tr);
+        var tr = el('tr'); var td = el('td', 'muted', msg('upload.list_failed', { msg: err.message })); td.colSpan = 4; tr.appendChild(td); filesBody.appendChild(tr);
       });
   }
 
@@ -75,19 +82,19 @@
     var li = el('li');
     var head = el('div', 'q-head');
     var name = el('span', 'q-name', file.name);
-    var status = el('span', 'q-status', 'w kolejce…');
+    var status = el('span', 'q-status', msg('upload.js.queued'));
     head.appendChild(name); head.appendChild(status);
     var bar = document.createElement('progress'); bar.max = 100; bar.value = 0;
     var actions = el('div', 'q-actions');
-    var cancelBtn = el('button', 'btn btn-small', 'Anuluj'); cancelBtn.type = 'button';
-    var retryBtn = el('button', 'btn btn-small', 'Ponów'); retryBtn.type = 'button'; retryBtn.hidden = true;
+    var cancelBtn = el('button', 'btn btn-small', msg('common.cancel')); cancelBtn.type = 'button';
+    var retryBtn = el('button', 'btn btn-small', msg('common.retry')); retryBtn.type = 'button'; retryBtn.hidden = true;
     actions.appendChild(cancelBtn); actions.appendChild(retryBtn);
     li.appendChild(head); li.appendChild(bar); li.appendChild(actions);
     queue.insertBefore(li, queue.firstChild);
 
     var sizeNote = ' (' + fmtSize(file.size) + ')';
     if (file.size > cfg.maxFileBytes) {
-      status.textContent = 'za duży: limit ' + fmtSize(cfg.maxFileBytes) + sizeNote;
+      status.textContent = msg('upload.js.too_large', { max: fmtSize(cfg.maxFileBytes) }) + sizeNote;
       status.className = 'q-status error'; cancelBtn.hidden = true; bar.remove();
       return;
     }
@@ -106,7 +113,7 @@
         return !(st >= 400 && st < 500);
       },
       onError: function (err) {
-        status.textContent = 'błąd: ' + parseError(err);
+        status.textContent = msg('upload.js.error', { msg: parseError(err) });
         status.className = 'q-status error';
         retryBtn.hidden = false; cancelBtn.hidden = true;
         refreshFiles();
@@ -119,7 +126,7 @@
       },
       onSuccess: function () {
         bar.value = 100;
-        status.textContent = 'ukończony' + sizeNote;
+        status.textContent = msg('upload.js.done') + sizeNote;
         status.className = 'q-status done';
         cancelBtn.hidden = true; retryBtn.hidden = true;
         refreshFiles();
@@ -128,11 +135,11 @@
 
     cancelBtn.addEventListener('click', function () {
       upload.abort(true).then(function () {
-        status.textContent = 'anulowano'; status.className = 'q-status error'; cancelBtn.hidden = true; refreshFiles();
-      }).catch(function () { status.textContent = 'anulowano (lokalnie)'; status.className = 'q-status error'; cancelBtn.hidden = true; });
+        status.textContent = msg('upload.js.cancelled'); status.className = 'q-status error'; cancelBtn.hidden = true; refreshFiles();
+      }).catch(function () { status.textContent = msg('upload.js.cancelled_local'); status.className = 'q-status error'; cancelBtn.hidden = true; });
     });
     retryBtn.addEventListener('click', function () {
-      retryBtn.hidden = true; cancelBtn.hidden = false; status.className = 'q-status'; status.textContent = 'ponawianie…';
+      retryBtn.hidden = true; cancelBtn.hidden = false; status.className = 'q-status'; status.textContent = msg('upload.js.retrying');
       startOrResume();
     });
 
@@ -141,9 +148,9 @@
       upload.findPreviousUploads().then(function (previous) {
         if (previous.length) {
           upload.resumeFromPreviousUpload(previous[0]);
-          status.textContent = 'wznawianie poprzedniego uploadu…';
+          status.textContent = msg('upload.js.resuming');
         } else {
-          status.textContent = 'rozpoczynanie…';
+          status.textContent = msg('upload.js.starting');
         }
         upload.start();
       }).catch(function () { upload.start(); });
@@ -175,8 +182,8 @@
       var src = btn.closest('.snippet, .copy-row').querySelector('[data-copy-source]');
       var text = src.value != null && src.tagName === 'INPUT' ? src.value : src.textContent;
       navigator.clipboard.writeText(text).then(function () {
-        var old = btn.textContent; btn.textContent = 'Skopiowano'; setTimeout(function () { btn.textContent = old; }, 1500);
-      }).catch(function () { btn.textContent = 'Zaznacz i skopiuj ręcznie'; });
+        var old = btn.textContent; btn.textContent = msg('common.copied'); setTimeout(function () { btn.textContent = old; }, 1500);
+      }).catch(function () { btn.textContent = msg('common.copy_manual'); });
     });
   });
 

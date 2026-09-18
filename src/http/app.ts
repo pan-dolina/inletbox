@@ -9,7 +9,8 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { AppContext } from './context.js';
 import { publicRouter } from './public.js';
-import { requestLogger, securityHeaders, sessionMiddleware } from './middleware.js';
+import { langCookie, languageMiddleware, requestLogger, securityHeaders, sessionMiddleware } from './middleware.js';
+import { isLang, t } from '../i18n.js';
 import { errorPage } from './views/admin.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -22,6 +23,7 @@ export function createApp(ctx: AppContext): Express {
 
   app.use(securityHeaders());
   app.use(requestLogger());
+  app.use(languageMiddleware());
 
   setBrand(ctx.cfg.brand);
   const h = createHash('sha256');
@@ -39,6 +41,16 @@ export function createApp(ctx: AppContext): Express {
   app.use('/static', express.static(path.join(ROOT, 'public'), staticOpts));
 
   app.get('/healthz', (_req, res) => { res.json({ ok: true }); });
+
+  // Footer language switcher: remembers the choice in a cookie and returns to the page (same-site paths only).
+  app.get('/lang/:lang', (req, res) => {
+    const lang = String(req.params.lang);
+    if (!isLang(lang)) { res.status(404).type('text/plain').send('Unknown language'); return; }
+    const next = typeof req.query.next === 'string' ? req.query.next : '/';
+    const safeNext = next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\') ? next : '/';
+    res.setHeader('Set-Cookie', langCookie(ctx, lang));
+    res.redirect(303, safeNext);
+  });
   app.get('/', (_req, res) => { res.redirect('/admin'); });
 
   app.use(sessionMiddleware(ctx));
@@ -50,7 +62,7 @@ export function createApp(ctx: AppContext): Express {
       res.status(404).json({ error: 'not_found' });
       return;
     }
-    const e = errorPage('Nie znaleziono', 'Strona nie istnieje.');
+    const e = errorPage(req.lang, t(req.lang, 'error.not_found.title'), t(req.lang, 'error.page_missing'), 404, req.originalUrl);
     res.status(e.status).type('html').send(e.body);
   });
 
@@ -63,7 +75,8 @@ export function createApp(ctx: AppContext): Express {
       res.status(status).json({ error: status >= 500 ? 'internal' : 'bad_request', message: status >= 500 ? 'Internal error' : e.message });
       return;
     }
-    const page = errorPage(status >= 500 ? 'Błąd serwera' : 'Nieprawidłowe żądanie', status >= 500 ? 'Wystąpił nieoczekiwany błąd.' : (e.message ?? 'Bad request'), status);
+    const lang = req.lang ?? 'en';
+    const page = errorPage(lang, t(lang, status >= 500 ? 'error.server.title' : 'error.bad_request.title'), status >= 500 ? t(lang, 'error.server') : (e.message ?? 'Bad request'), status, req.originalUrl);
     res.status(page.status).type('html').send(page.body);
   });
 

@@ -6,7 +6,7 @@
       var src = btn.closest('.copy-row, .snippet').querySelector('[data-copy-source]');
       var text = src.tagName === 'INPUT' ? src.value : src.textContent;
       navigator.clipboard.writeText(text).then(function () {
-        var old = btn.textContent; btn.textContent = 'Skopiowano'; setTimeout(function () { btn.textContent = old; }, 1500);
+        var old = btn.textContent; btn.textContent = document.body.dataset.copied || 'Copied'; setTimeout(function () { btn.textContent = old; }, 1500);
       }).catch(function () { src.select && src.select(); });
     });
   });

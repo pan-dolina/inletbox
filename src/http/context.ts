@@ -1,6 +1,7 @@
 import type { DataStore } from '@tus/utils';
 import type { Config } from '../config.js';
 import type { Db } from '../db.js';
+import type { Lang } from '../i18n.js';
 import type { StorageBackend } from '../storage/index.js';
 import type { Session } from '../services/auth.js';
 import type { ResolvedLink } from '../services/links.js';
@@ -17,6 +18,8 @@ declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
+      /** UI language for this request (cookie, then Accept-Language, then English). */
+      lang: Lang;
       session?: Session;
       sessionId?: string;
       uploadLink?: ResolvedLink;

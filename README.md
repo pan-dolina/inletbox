@@ -13,8 +13,9 @@ no self-registration.
   `tus-js-client`). No native modules.
 - **Deployment:** one container + one volume; optional MinIO profile for S3 testing.
 - **Admin 2FA:** TOTP (RFC 6238) with recovery codes, optionally enforced for every admin.
-- **UI language:** the web interface is currently Polish (the admin panel and the public
-  upload page); the API, configuration, logs and this documentation are English.
+- **UI languages:** English and Polish. The language is picked per request from the
+  browser's `Accept-Language`; a footer switcher (EN | PL) stores an explicit choice in a
+  cookie. API error messages follow the same language.
 
 ---
 
@@ -46,8 +47,7 @@ docker compose up -d --build
 docker compose exec app node dist/cli.js create-admin admin      # password prompted interactively, min. 12 characters
 ```
 
-After the first login enable two-factor authentication in the panel (**Bezpieczeństwo** /
-Security) or enforce it for every administrator with `ADMIN_REQUIRE_TOTP=true`.
+After the first login enable two-factor authentication in the panel (**Security**) or enforce it for every administrator with `ADMIN_REQUIRE_TOTP=true`.
 
 Panel: `PUBLIC_URL/admin`. Data (the SQLite database and, with the local backend, the
 files) lives on the `inletbox-data` volume mounted at `/data`.
@@ -405,7 +405,7 @@ an active upload keeps its socket busy, so it is unaffected.
 - **Logs:** JSON on stdout; `/u/<token>` paths, `token=` parameters and uploader-supplied
   file names are redacted; `Authorization`/`Cookie` are never logged; usernames of failed
   logins are not stored (that field routinely receives mistyped passwords).
-- **Audit log** (`audit_log`, panel → "Dziennik"): logins (successful and failed, incl.
+- **Audit log** (`audit_log`, panel → "Audit log"): logins (successful and failed, incl.
   second-factor events and lockouts), case/link operations, upload start/completion/
   abort/rejection, downloads and deletions, cleanup events; with the client IP.
 - **Files are untrusted.** Antivirus scanning is **not part of this version**. Integration
@@ -427,6 +427,7 @@ A single-process Express + SQLite monolith; storage is a plug-in.
 ```
 src/
   config.ts            environment variables → Config (parseSize, branding, …)
+  i18n.ts              en/pl dictionaries, Accept-Language negotiation, placeholders
   db.ts                node:sqlite, migrations from migrations/*.sql, transaction()
   crypto.ts            ids, tokens, sha256, scrypt
   totp.ts              RFC 6238 TOTP, base32, recovery codes
@@ -434,7 +435,7 @@ src/
   storage/             types (interface), local, s3, limit (byte counter + hash)
   services/            auth (admins, sessions, TOTP), cases, links, files (reservations), audit, cleanup
   http/
-    app.ts             application assembly, static assets, 404/500
+    app.ts             application assembly, static assets, /lang/:lang switcher, 404/500
     brand.ts           /brand/logo, /brand/theme.css
     middleware.ts      helmet/CSP, logger, sessions, CSRF, rate limits, link auth (Bearer)
     admin.ts           panel (SSR forms), login + second factor, security page
@@ -477,7 +478,7 @@ docker compose --profile minio up -d minio
 TEST_S3=1 npm test          # the same suite against MinIO (a temporary bucket per test file)
 ```
 
-The suite (vitest, 71 tests) boots a real HTTP server on a random port and covers: creating
+The suite (vitest, 75 tests) boots a real HTTP server on a random port and covers: creating
 a case and a link through the forms (full URL once, then only the hint); uploads with
 `Content-Length`, chunked, and with **real curl** (`-T` with a space in the path, exit code
 22 on error); list isolation between links; no read path by file id for a link holder;
@@ -487,7 +488,7 @@ duplicates; name sanitisation (traversal, HTML); dropped connections and cleanup
 create/patch/head, wrong offset (409), isolation (404), idempotent finalisation (410),
 `tus-js-client` with an interruption and resume from a stored URL, expiry of unfinished
 uploads, orphan sweeps and `missing` detection; link expiry/revocation (including aborting
-an in-flight upload) and case closure; CSRF and login rate limiting; branding.
+an in-flight upload) and case closure; CSRF and login rate limiting; branding; language negotiation and the cookie switcher.
 
 Security tests (`test/security.test.ts`, `test/totp.test.ts`): headers (CSP without
 `unsafe-inline`, `X-Frame-Options: DENY`, `nosniff`, no `X-Powered-By`), cookie attributes
@@ -501,7 +502,7 @@ access, session lockout after 5 errors, account lockout after 10 errors across s
 one-time recovery codes, code regeneration, disabling with a code (ending other sessions),
 CLI `disable-totp`, `ADMIN_REQUIRE_TOTP` mode.
 
-Status at release: 71/71 green on the local backend and 71/71 on MinIO
+Status at release: 75/75 green on the local backend and 75/75 on MinIO
 (`quay.io/minio/minio`), the Docker image builds, the CLI script was verified by hand
 (killed halfway through an 8 MB file, resumed from the stored offset, identical content).
 The same checks run in GitHub Actions on every push.
@@ -524,7 +525,8 @@ The same checks run in GitHub Actions on every push.
   large files a short-lived presigned `GET` scoped to one object could be added.
 - No notifications (e-mail/webhook) for new files; the natural hook is the
   `upload.complete` audit event.
-- The web UI is Polish only; the strings live in `src/http/views/` and `public/*.js`.
+- Only English and Polish UI strings exist; adding a language means one more dictionary in
+  `src/i18n.ts` (the type system enforces that every key is translated).
 
 ---
 

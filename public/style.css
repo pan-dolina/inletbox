@@ -116,3 +116,5 @@ table.small { font-size: .82rem; }
 .qr svg { width: 200px; height: 200px; display: block; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
 .btn-link-muted { color: var(--muted); }
 .breakable { word-break: break-all; }
+.lang-switch a { color: var(--muted); }
+.lang-current { font-weight: 600; }

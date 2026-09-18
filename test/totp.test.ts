@@ -118,7 +118,7 @@ describe('admin two-factor login flow', () => {
     expect((await fetch(`${app.base}/admin`, { headers: { cookie: s.cookie }, redirect: 'manual' })).status).toBe(200);
     const again = await (await fetch(`${app.base}/admin/security`, { headers: { cookie: s.cookie } })).text();
     for (const c of recoveryCodes) expect(again).not.toContain(c);
-    expect(again).toContain('Niewykorzystane kody zapasowe: <strong>8</strong>');
+    expect(again).toContain('Unused recovery codes: <strong>8</strong>');
   });
 
   it('after enrolment the password alone yields a pending session that cannot use the panel', async () => {
@@ -163,12 +163,12 @@ describe('admin two-factor login flow', () => {
     for (let i = 0; i < 4; i++) {
       const res = await postTotp(cookie, '000000');
       expect(res.status).toBe(401);
-      expect(await res.text()).toContain(`Pozostałe próby: ${4 - i}`);
+      expect(await res.text()).toContain(`Attempts left: ${4 - i}`);
     }
     const fifth = await postTotp(cookie, '000000');
     expect(fifth.status).toBe(401);
     expect(fifth.headers.get('set-cookie')).toContain('Max-Age=0');
-    expect(await fifth.text()).toContain('Zbyt wiele');
+    expect(await fifth.text()).toContain('Too many wrong codes');
     // The session is gone: even a correct code cannot be used with the old cookie.
     expect((await fetch(`${app.base}/admin/totp`, { headers: { cookie }, redirect: 'manual' })).headers.get('location')).toBe('/admin/login');
     expect(listAudit(app.ctx.db, 5).map((r) => r.action)).toContain('admin.totp_locked');
@@ -183,7 +183,7 @@ describe('admin two-factor login flow', () => {
     expect((await postTotp(b.cookie, code)).status).toBe(401);
     expect((await postTotp(b.cookie, 'zzzzz-zzzzz')).status).toBe(401);
     const security = await (await fetch(`${app.base}/admin/security`, { headers: { cookie: rotated(ok) } })).text();
-    expect(security).toContain('Niewykorzystane kody zapasowe: <strong>7</strong>');
+    expect(security).toContain('Unused recovery codes: <strong>7</strong>');
   });
 
   it('locks the account (not just the session) after repeated wrong codes from any session', async () => {
@@ -197,10 +197,10 @@ describe('admin two-factor login flow', () => {
     // A correct code from a brand-new session is refused while the lock holds.
     const fresh = await passwordLogin();
     const page = await (await fetch(`${app.base}/admin/totp`, { headers: { cookie: fresh.cookie } })).text();
-    expect(page).toContain('tymczasowo zablokowane');
+    expect(page).toContain('temporarily locked');
     const refused = await postTotp(fresh.cookie, freshCode());
     expect(refused.status).toBe(401);
-    expect(await refused.text()).toContain('zablokowane na 15 minut');
+    expect(await refused.text()).toContain('locked for 15 minutes');
     // Lock expiry (simulated) restores normal operation and the failure counter is reset by success.
     app.ctx.db.prepare('UPDATE admins SET totp_locked_until = NULL WHERE id = ?').run(admin.id);
     const again = await passwordLogin();
@@ -270,7 +270,7 @@ describe('ADMIN_REQUIRE_TOTP', () => {
     const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
     expect((await fetch(`${app.base}/admin`, { headers: { cookie }, redirect: 'manual' })).headers.get('location')).toBe('/admin/security');
     const securityPage = await (await fetch(`${app.base}/admin/security`, { headers: { cookie } })).text();
-    expect(securityPage).toContain('wymaga uwierzytelniania dwuskładnikowego');
+    expect(securityPage).toContain('requires two-factor authentication');
     const csrf = /name="_csrf" value="([^"]+)"/.exec(securityPage)![1]!;
     const s = { cookie, csrf };
     expect((await adminPost(app, s, '/admin/cases', { name: 'blocked' })).status).toBe(403);
