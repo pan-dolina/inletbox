@@ -59,6 +59,11 @@ let assetVersion = 'dev';
 export function setAssetVersion(v: string): void { assetVersion = v; }
 export function asset(path: string): string { return `${path}?v=${assetVersion}`; }
 
+/** The release, read from package.json at startup and shown in the footer. */
+let appVersion = '0.0.0';
+export function setAppVersion(v: string): void { appVersion = v; }
+export function getAppVersion(): string { return appVersion; }
+
 export interface LayoutOptions {
   lang: Lang;
   title: string;
@@ -97,7 +102,7 @@ ${b.logoPath ? html`<link rel="icon" href="/brand/logo">` : ''}
 <main class="container">
 ${opts.body}
 </main>
-<footer class="footer">${footer} · <span class="lang-switch" aria-label="${t(opts.lang, 'common.language')}">${switcher.map((s, i) => i ? html` | ${s}` : s)}</span></footer>
+<footer class="footer">${footer} · <span class="version">v${appVersion}</span> · <span class="lang-switch" aria-label="${t(opts.lang, 'common.language')}">${switcher.map((s, i) => i ? html` | ${s}` : s)}</span></footer>
 ${(opts.scripts ?? []).map((s) => html`<script src="${asset(s)}" defer></script>`)}
 </body>
 </html>`.value;

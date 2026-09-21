@@ -219,3 +219,4 @@ table.audit td.details > span { display: inline-block; max-width: 24rem; white-s
 .breakable { word-break: break-all; }
 .lang-switch a { color: var(--muted); }
 .lang-current { font-weight: 600; }
+.version { white-space: nowrap; }

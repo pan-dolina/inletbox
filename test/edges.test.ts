@@ -375,6 +375,18 @@ describe('upload page without optional limits', () => {
   });
 });
 
+describe('release version in the footer', () => {
+  it('shows the running version on public and admin pages, matching package.json', async () => {
+    const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+    const l = app.mkLink(app.mkCase().id);
+    for (const url of [`${app.base}/`, `${app.base}/admin/login`, `${app.base}/u/${l.token}`]) {
+      expect(await (await fetch(url)).text()).toContain(`<span class="version">v${pkg.version}</span>`);
+    }
+    // A stale hard-coded string is the failure mode this guards against.
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
 describe('theme and upload page layout', () => {
   it('ships an automatic dark theme that leaves the instance brand colours alone', async () => {
     const css = await (await fetch(`${app.base}/static/style.css`)).text();
