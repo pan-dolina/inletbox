@@ -1,5 +1,5 @@
 import { Router, urlencoded, type Request, type Response } from 'express';
-import contentDisposition from 'content-disposition';
+import { create as contentDisposition } from 'content-disposition';
 import QRCode from 'qrcode';
 import { pipeline } from 'node:stream/promises';
 import { parseSize } from '../config.js';

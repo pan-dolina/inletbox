@@ -95,8 +95,9 @@ describe('admin panel', () => {
     const dl = await adminDownload(app, s, id);
     expect(dl.status).toBe(200);
     expect(dl.headers.get('content-type')).toBe('application/octet-stream');
-    // Non-Latin-1 names get an ASCII fallback plus the RFC 5987 encoded form.
-    expect(dl.headers.get('content-disposition')).toBe(`attachment; filename="za?ó?? \\"final\\".pdf"; filename*=UTF-8''za%C5%BC%C3%B3%C5%82%C4%87%20%22final%22.pdf`);
+    // Non-ASCII names get a pure-ASCII fallback (every non-ASCII byte becomes "?")
+    // plus the RFC 5987 encoded form, which is the one clients actually use.
+    expect(dl.headers.get('content-disposition')).toBe(`attachment; filename="za???? \\"final\\".pdf"; filename*=UTF-8''za%C5%BC%C3%B3%C5%82%C4%87%20%22final%22.pdf`);
     expect(dl.headers.get('x-content-type-options')).toBe('nosniff');
     expect(dl.headers.get('content-security-policy')).toContain('sandbox');
     expect(dl.headers.get('content-length')).toBe(String(data.length));
