@@ -9,8 +9,6 @@ The section for a version is what ends up in its
 [GitHub Release](https://github.com/pan-dolina/inletbox/releases): `.github/workflows/release.yml`
 reads it from this file and refuses to publish a tag that has no section here.
 
-## [Unreleased]
-
 ## [0.2.0] - 2026-09-21
 
 ### Changed
@@ -87,7 +85,6 @@ First release.
   Docker Compose deployment.
 - Apache-2.0.
 
-[Unreleased]: https://github.com/pan-dolina/inletbox/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/pan-dolina/inletbox/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/pan-dolina/inletbox/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/pan-dolina/inletbox/releases/tag/v0.1.0
