@@ -370,8 +370,13 @@ drop.example.com {
     }
     log {
         output file /var/log/caddy/inletbox.log
+        # regexp, not replace: the replace filter takes one static value and would
+        # rewrite *every* logged URI to it, destroying the access log while looking
+        # like redaction. Without a filter at all, the token is written in clear.
         format filter {
-            request>uri replace "/u/[^/?]+" "/u/[redacted]"
+            wrap json
+            request>uri regexp "/u/[^/?]+" "/u/[redacted]"
+            request>uri regexp "(/api/upload/)[^?]+" "${1}[filename]"
         }
     }
 }
@@ -452,8 +457,21 @@ drop.example.com {
         header_up X-Forwarded-For {client_ip}
         header_up X-Real-IP {client_ip}
     }
+
+    log {
+        output file /var/log/caddy/inletbox.log
+        format filter {
+            wrap json
+            request>uri regexp "/u/[^/?]+" "/u/[redacted]"
+            request>uri regexp "(/api/upload/)[^?]+" "${1}[filename]"
+        }
+    }
 }
 ```
+
+The log filter is not optional. `/u/<token>` is the whole credential, and a plain
+`format json` writes it to disk on every request — where it then survives in rotated
+copies and in whatever ships those logs onwards.
 
 Two things this does not solve:
 
