@@ -21,6 +21,8 @@ no self-registration.
 
 What changed between releases is in [CHANGELOG.md](CHANGELOG.md); each version's section
 there is also the body of its [GitHub Release](https://github.com/pan-dolina/inletbox/releases).
+How to report a vulnerability is in [SECURITY.md](SECURITY.md) — not in a public issue —
+and how to work on this is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

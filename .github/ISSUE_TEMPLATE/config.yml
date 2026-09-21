@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/pan-dolina/inletbox/security/advisories/new
+    about: Never in a public issue. This opens a private report visible only to the maintainers.
+  - name: Question or deployment help
+    url: https://github.com/pan-dolina/inletbox/discussions
+    about: Configuration, reverse proxies, storage backends — ask here rather than opening a bug.

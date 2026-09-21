@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a change in behaviour
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is deliberately not a network drive and not a sharing tool: no previews, no
+        public downloads, no self-registration. Proposals that turn it into one will be
+        declined, however well implemented.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what stops you today? Not the solution yet.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you already tried or rejected
+      description: Existing configuration, a reverse-proxy rule, the CLI — and why it was not enough.
+
+  - type: checkboxes
+    id: model
+    attributes:
+      label: Security model
+      options:
+        - label: This does not let a link holder read back or download files
+          required: true
+        - label: This does not weaken per-link isolation, quotas, CSRF or the admin second factor
+          required: true
