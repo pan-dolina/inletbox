@@ -15,6 +15,8 @@
     "cli": "node --env-file-if-exists=.env --import tsx src/cli.ts",
     "test": "vitest run",
     "test:s3": "TEST_S3=1 vitest run",
+    "test:coverage": "vitest run --coverage",
+    "audit": "npm audit --audit-level=high",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

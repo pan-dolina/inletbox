@@ -10,18 +10,41 @@ permissions:
 
 jobs:
   test:
-    name: Typecheck, tests (local + MinIO), Docker build
+    name: Typecheck and tests (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 24 is the supported floor (package.json engines); 26 is what the Docker image ships.
+        node: [24, 26]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - name: Tests (local storage)
-        run: npm test
+      - name: Tests with coverage (local storage)
+        run: npm run test:coverage
+      - name: Upload coverage
+        if: matrix.node == 26
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+
+  test-s3:
+    name: Tests against S3 (MinIO)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
       - name: Start MinIO
         run: |
           docker run -d --name minio -p 127.0.0.1:9000:9000 \
@@ -32,5 +55,50 @@ jobs:
         run: TEST_S3=1 npm test
         env:
           TEST_S3_ENDPOINT: http://127.0.0.1:9000
-      - name: Docker build
+
+  docker:
+    name: Docker build and image scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build image
         run: docker build -t inletbox:ci .
+      - name: Scan image for known vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: inletbox:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+  security:
+    name: Dependency, secret and source scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # gitleaks scans the whole history, not just the tip
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - name: Known vulnerabilities in dependencies
+        run: npm audit --audit-level=high
+      - name: Secrets in the working tree and in history
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz gitleaks
+          ./gitleaks git . --no-banner --redact --log-level warn
+          ./gitleaks dir . --no-banner --redact --log-level warn
+      - name: Vulnerable or misconfigured files in the repository
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scanners: vuln,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table

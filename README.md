@@ -31,7 +31,7 @@ no self-registration.
 8. [Reverse proxy](#8-reverse-proxy)
 9. [Security](#9-security)
 10. [Architecture and data model](#10-architecture-and-data-model)
-11. [Tests](#11-tests)
+11. [Tests and security scanning](#11-tests-and-security-scanning)
 12. [Limitations and next steps](#12-limitations-and-next-steps)
 
 ---
@@ -470,15 +470,16 @@ and SHA-256) → `complete`.
 
 ---
 
-## 11. Tests
+## 11. Tests and security scanning
 
 ```bash
 npm test                    # local backend (SQLite + a temporary directory per test file)
+npm run test:coverage       # the same suite with a V8 coverage report (thresholds enforced)
 docker compose --profile minio up -d minio
 TEST_S3=1 npm test          # the same suite against MinIO (a temporary bucket per test file)
 ```
 
-The suite (vitest, 75 tests) boots a real HTTP server on a random port and covers: creating
+The suite (vitest, 99 tests) boots a real HTTP server on a random port and covers: creating
 a case and a link through the forms (full URL once, then only the hint); uploads with
 `Content-Length`, chunked, and with **real curl** (`-T` with a space in the path, exit code
 22 on error); list isolation between links; no read path by file id for a link holder;
@@ -502,10 +503,36 @@ access, session lockout after 5 errors, account lockout after 10 errors across s
 one-time recovery codes, code regeneration, disabling with a code (ending other sessions),
 CLI `disable-totp`, `ADMIN_REQUIRE_TOTP` mode.
 
-Status at release: 75/75 green on the local backend and 75/75 on MinIO
-(`quay.io/minio/minio`), the Docker image builds, the CLI script was verified by hand
-(killed halfway through an 8 MB file, resumed from the stored offset, identical content).
-The same checks run in GitHub Actions on every push.
+Failure paths get their own file (`test/edges.test.ts`), because that is where leaks
+happen: log redaction and the dropping of `authorization`/`cookie`/`token`/`password`
+fields, storage keys that try to escape their directory, a storage error surfacing as a
+500/410 page with no internal message or path in it, a missing `Authorization` header vs a
+token that does not resolve, migrations re-running, service-level input validation, and the
+branding endpoints with a logo file that disappeared.
+
+Coverage is measured with the V8 provider and enforced in CI (`npm run test:coverage`);
+current run: **93% statements, 86% branches, 96% functions, 98% lines**. `src/server.ts`
+and `src/cli.ts` are excluded as process entry points, and `src/storage/s3.ts` is measured
+in the `TEST_S3=1` run instead of the local one, where it never executes.
+
+### Security scanning
+
+Every push and pull request runs, besides the tests:
+
+| Check | What it catches |
+| --- | --- |
+| `npm audit --audit-level=high` | known vulnerabilities in dependencies |
+| **CodeQL** (`security-extended`), also weekly | injection, traversal, unsafe flows in our own code |
+| **gitleaks** over the working tree *and* the full git history | a token, key or `.env` that made it into a commit |
+| **Trivy** filesystem scan (`vuln,misconfig`) | vulnerable lockfile entries, Dockerfile misconfiguration |
+| **Trivy** image scan of the built image | vulnerable OS/Node packages in what actually ships |
+| **Dependabot** (npm, GitHub Actions, Docker), weekly | updates, with minor/patch grouped into one PR |
+
+Status at release: 99/99 green on the local backend and 99/99 on MinIO
+(`quay.io/minio/minio`) on Node 24 and Node 26, the Docker image builds, both Trivy scans
+and gitleaks are clean, `npm audit` reports no vulnerabilities, and the CLI script was
+verified by hand (killed halfway through an 8 MB file, resumed from the stored offset,
+identical content). The same checks run in GitHub Actions on every push.
 
 ---
 
