@@ -16,6 +16,8 @@ no self-registration.
 - **UI languages:** English and Polish. Polish is used when it is the browser's primary
   language (`Accept-Language`), English in every other case; a footer switcher (EN | PL)
   stores an explicit choice in a cookie. API error messages follow the same language.
+- **Light and dark theme:** follows the operating system / browser preference
+  (`prefers-color-scheme`). No toggle, no script, no cookie — nothing to configure.
 
 ---
 
@@ -148,6 +150,12 @@ footer text. Colours are emitted as a generated stylesheet at `/brand/theme.css`
 stays free of `unsafe-inline`. Keep the logo file outside the repository (the `branding/`
 directory is git-ignored) and mount it into the container, e.g.
 `volumes: ["./branding:/branding:ro"]` + `BRAND_LOGO_PATH=/branding/logo.png`.
+
+The interface follows the viewer's `prefers-color-scheme`: page background, cards, inputs,
+code blocks and badges switch to a dark palette automatically. The three `BRAND_COLOR_*`
+values are **not** touched by the dark theme — an instance keeps its own primary, top-bar
+and accent colour in both modes, so pick values that are legible on a light *and* a dark
+card. A QR code keeps its white quiet zone in both themes, because scanners need it.
 
 ---
 

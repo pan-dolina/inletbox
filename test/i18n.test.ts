@@ -41,8 +41,12 @@ describe('language on rendered pages', () => {
     expect(await (await fetch(`${app.base}/admin/login`, { headers: { 'accept-language': 'pl' } })).text()).toContain('Logowanie administratora');
     expect(await (await fetch(l.url)).text()).toContain('Upload from the terminal');
     expect(await (await fetch(l.url, { headers: { 'accept-language': 'pl' } })).text()).toContain('Upload z terminala');
-    // The public page ships its client-side strings in the chosen language.
-    expect(await (await fetch(l.url, { headers: { 'accept-language': 'pl' } })).text()).toContain('"upload.js.done":"ukończony"');
+    // The public page ships its client-side strings in the chosen language. A key that is
+    // missing from clientMessages() renders as the raw key ("upload.js.finalising") in the UI.
+    const plUpload = await (await fetch(l.url, { headers: { 'accept-language': 'pl' } })).text();
+    expect(plUpload).toContain('"upload.js.done":"ukończony"');
+    expect(plUpload).toContain('"upload.js.finalising":"wysłano wszystkie dane, serwer kończy zapis…"');
+    expect(await (await fetch(l.url)).text()).toContain('"upload.js.finalising":"all bytes sent, the server is finishing…"');
     // API error messages follow the language too.
     app.ctx.db.prepare('UPDATE links SET revoked_at = ? WHERE id = ?').run(new Date().toISOString(), l.id);
     expect((await (await fetch(`${app.base}/api/files`, { headers: { ...bearer(l.token), 'accept-language': 'pl' } })).json() as { message: string }).message).toBe('Ten link został unieważniony.');

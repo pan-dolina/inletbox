@@ -1,4 +1,16 @@
+/*
+ * Colour tokens. The light set is the default; the dark set below is applied
+ * from the operating system / browser preference only — there is no toggle and
+ * no JavaScript, so the strict CSP stays untouched and the choice survives a
+ * reload without a cookie.
+ *
+ * --primary / --topbar / --accent are deliberately NOT redefined in the dark
+ * block: /brand/theme.css overrides them per instance and must keep winning.
+ * Everything that needs to blend with the page mixes against --mix-base instead
+ * of a hard-coded white.
+ */
 :root {
+  color-scheme: light dark;
   --bg: #f5f6f8;
   --card: #ffffff;
   --text: #1c1f24;
@@ -14,7 +26,69 @@
   --warn-border: #f0c36d;
   --highlight: #eaf3ff;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Surfaces that used to be hard-coded white/grey. */
+  --mix-base: #ffffff;
+  --code-bg: #f0f2f5;
+  --input-bg: #ffffff;
+  --btn-bg: #ffffff;
+  --btn-bg-hover: #f0f2f5;
+  --btn-primary-shade: black;
+  --danger-border: #e8b4ae;
+  --danger-bg-hover: #fdf1ef;
+  --dropzone-bg: #fafbfc;
+  --dropzone-border: #b7c0cc;
+
+  --badge-bg: #e5e7eb;
+  --badge-text: #374151;
+  --badge-ok-bg: #dcfce7;
+  --badge-ok-text: #166534;
+  --badge-bad-bg: #fee2e2;
+  --badge-bad-text: #991b1b;
+  --badge-warn-bg: #fef3c7;
+  --badge-warn-text: #92400e;
+  --badge-info-bg: #dbeafe;
+  --badge-info-text: #1e40af;
 }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --text: #e6edf3;
+    --muted: #9198a1;
+    --border: #30363d;
+    --danger: #ff7b72;
+    --ok: #3fb950;
+    --warn-bg: #2b2413;
+    --warn-border: #7d6417;
+    --highlight: #17233a;
+
+    --mix-base: #161b22;
+    --code-bg: #0d1117;
+    --input-bg: #0d1117;
+    --btn-bg: #21262d;
+    --btn-bg-hover: #30363d;
+    /* Hover brightens instead of darkening: on a dark page "darker" reads as disabled. */
+    --btn-primary-shade: white;
+    --danger-border: #6e2b26;
+    --danger-bg-hover: #2a1512;
+    --dropzone-bg: #11161d;
+    --dropzone-border: #3d4652;
+
+    --badge-bg: #30363d;
+    --badge-text: #c9d1d9;
+    --badge-ok-bg: #12321d;
+    --badge-ok-text: #6ee787;
+    --badge-bad-bg: #3a1618;
+    --badge-bad-text: #ff9492;
+    --badge-warn-bg: #3a2c0c;
+    --badge-warn-text: #e3b341;
+    --badge-info-bg: #12233d;
+    --badge-info-text: #79c0ff;
+  }
+}
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--text); background: var(--bg); }
@@ -22,7 +96,7 @@ a { color: var(--primary); }
 h1 { font-size: 1.4rem; margin: 0 0 .75rem; }
 h2 { font-size: 1.15rem; margin: 0 0 .6rem; }
 code, pre, .mono { font-family: var(--mono); font-size: .9em; }
-pre { background: #f0f2f5; border: 1px solid var(--border); border-radius: 6px; padding: .6rem .8rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: .6rem .8rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
 
 .topbar { background: var(--topbar); color: #fff; }
 .topbar-inner { max-width: 1100px; margin: 0 auto; padding: .6rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -37,10 +111,10 @@ pre { background: #f0f2f5; border: 1px solid var(--border); border-radius: 6px; 
 
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.2rem; margin-bottom: 1rem; }
 .card.narrow { max-width: 420px; margin: 3rem auto; }
-.card.highlight { background: color-mix(in srgb, var(--accent) 10%, white); border-color: color-mix(in srgb, var(--accent) 35%, white); }
+.card.highlight { background: color-mix(in srgb, var(--accent) 10%, var(--mix-base)); border-color: color-mix(in srgb, var(--accent) 35%, var(--mix-base)); }
 
 label { display: block; font-size: .9rem; color: var(--muted); margin-bottom: .6rem; }
-label input, label select, label textarea { display: block; width: 100%; margin-top: .2rem; padding: .45rem .6rem; font: inherit; color: var(--text); border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+label input, label select, label textarea { display: block; width: 100%; margin-top: .2rem; padding: .45rem .6rem; font: inherit; color: var(--text); border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg); }
 label.link { display: inline; color: var(--primary); cursor: pointer; text-decoration: underline; font-size: inherit; }
 .row { display: flex; flex-wrap: wrap; gap: .8rem; align-items: flex-end; }
 .row .grow { flex: 1 1 220px; }
@@ -49,12 +123,12 @@ label.link { display: inline; color: var(--primary); cursor: pointer; text-decor
 .inline { display: inline; }
 details summary { cursor: pointer; font-weight: 600; margin: .4rem 0; }
 
-.btn { display: inline-block; padding: .45rem .9rem; font: inherit; font-size: .9rem; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text); cursor: pointer; text-decoration: none; }
-.btn:hover { background: #f0f2f5; }
+.btn { display: inline-block; padding: .45rem .9rem; font: inherit; font-size: .9rem; border: 1px solid var(--border); border-radius: 6px; background: var(--btn-bg); color: var(--text); cursor: pointer; text-decoration: none; }
+.btn:hover { background: var(--btn-bg-hover); }
 .btn-primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
-.btn-primary:hover { background: color-mix(in srgb, var(--primary) 85%, black); }
-.btn-danger { color: var(--danger); border-color: #e8b4ae; }
-.btn-danger:hover { background: #fdf1ef; }
+.btn-primary:hover { background: color-mix(in srgb, var(--primary) 85%, var(--btn-primary-shade)); }
+.btn-danger { color: var(--danger); border-color: var(--danger-border); }
+.btn-danger:hover { background: var(--danger-bg-hover); }
 .btn-link { background: none; border: none; color: #cfd6de; padding: 0; }
 .btn-small { padding: .2rem .6rem; font-size: .8rem; }
 .btn[disabled] { opacity: .5; cursor: not-allowed; }
@@ -66,28 +140,41 @@ table.small { font-size: .82rem; }
 .nowrap { white-space: nowrap; }
 .filename { word-break: break-all; max-width: 380px; }
 
-.badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; background: #e5e7eb; color: #374151; vertical-align: middle; }
-.badge-open, .badge-active, .badge-complete { background: #dcfce7; color: #166534; }
-.badge-closed, .badge-revoked, .badge-deleted, .badge-aborted { background: #fee2e2; color: #991b1b; }
-.badge-expired, .badge-case_closed, .badge-missing { background: #fef3c7; color: #92400e; }
-.badge-uploading { background: #dbeafe; color: #1e40af; }
+.badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; background: var(--badge-bg); color: var(--badge-text); vertical-align: middle; }
+.badge-open, .badge-active, .badge-complete { background: var(--badge-ok-bg); color: var(--badge-ok-text); }
+.badge-closed, .badge-revoked, .badge-deleted, .badge-aborted { background: var(--badge-bad-bg); color: var(--badge-bad-text); }
+.badge-expired, .badge-case_closed, .badge-missing { background: var(--badge-warn-bg); color: var(--badge-warn-text); }
+.badge-uploading { background: var(--badge-info-bg); color: var(--badge-info-text); }
 
 .muted { color: var(--muted); }
 .small { font-size: .85rem; }
 .flash { padding: .6rem .8rem; border-radius: 6px; margin-bottom: .8rem; }
-.flash-error { background: #fee2e2; color: #991b1b; }
-.flash-ok { background: #dcfce7; color: #166534; }
+.flash-error { background: var(--badge-bad-bg); color: var(--badge-bad-text); }
+.flash-ok { background: var(--badge-ok-bg); color: var(--badge-ok-text); }
 .warning { background: var(--warn-bg); border: 1px solid var(--warn-border); padding: .6rem .8rem; border-radius: 6px; }
 
 .copy-row { display: flex; gap: .5rem; }
-.copy-row input { flex: 1; padding: .45rem .6rem; font: inherit; border: 1px solid var(--border); border-radius: 6px; }
+.copy-row input { flex: 1; padding: .45rem .6rem; font: inherit; color: var(--text); background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; }
 .snippet { margin-bottom: .8rem; }
 .snippet-head { display: flex; justify-content: space-between; align-items: center; font-size: .85rem; color: var(--muted); margin-bottom: .3rem; }
 
-.dropzone { border: 2px dashed #b7c0cc; border-radius: 8px; padding: 1.5rem; text-align: center; background: #fafbfc; transition: background .15s, border-color .15s; }
-.dropzone.dragover { background: color-mix(in srgb, var(--accent) 10%, white); border-color: var(--primary); }
+/* The drop target is the primary action on the upload page, so it is deliberately large. */
+.dropzone {
+  border: 2px dashed var(--dropzone-border); border-radius: 8px; padding: 2.5rem 1.5rem; min-height: 200px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .2rem;
+  text-align: center; background: var(--dropzone-bg); transition: background .15s, border-color .15s;
+}
+.dropzone.dragover { background: color-mix(in srgb, var(--accent) 12%, var(--mix-base)); border-color: var(--primary); }
 .dropzone p { margin: .3rem 0; }
+.dropzone .dropzone-lead { font-size: 1.05rem; }
+.dropzone:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .limits { margin: .4rem 0 0; padding-left: 1.2rem; }
+
+/* Terminal instructions: present, but folded away so the drop target stays the focus. */
+.collapsible > summary { font-size: 1.15rem; font-weight: 600; margin: 0; }
+.collapsible > summary .summary-hint { font-size: .85rem; font-weight: 400; color: var(--muted); }
+.collapsible[open] > summary { margin-bottom: .8rem; }
+.collapsible > summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 4px; }
 
 .queue { list-style: none; padding: 0; margin: 1rem 0 0; }
 .queue li { border: 1px solid var(--border); border-radius: 6px; padding: .6rem .8rem; margin-bottom: .5rem; }
@@ -96,7 +183,11 @@ table.small { font-size: .82rem; }
 .queue .q-status { font-size: .85rem; color: var(--muted); white-space: nowrap; }
 .queue .q-status.error { color: var(--danger); }
 .queue .q-status.done { color: var(--ok); }
+/* <progress> deliberately keeps its native appearance: `appearance: none` (which is
+   what restyling the fill requires) also removes the browser's built-in indeterminate
+   animation, and that animation is the whole point of the "finalising" state below. */
 .queue progress { width: 100%; height: 8px; margin-top: .4rem; }
+.queue li.done { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
 .queue .q-actions { margin-top: .4rem; }
 
 @media (max-width: 640px) {
@@ -113,6 +204,7 @@ table.small { font-size: .82rem; }
 [hidden] { display: none !important; }
 
 .qr { width: 200px; flex: 0 0 auto; }
+/* The QR code keeps a white quiet zone in both themes: scanners need the contrast. */
 .qr svg { width: 200px; height: 200px; display: block; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
 .btn-link-muted { color: var(--muted); }
 .breakable { word-break: break-all; }

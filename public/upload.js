@@ -99,6 +99,23 @@
       return;
     }
 
+    // The last PATCH is "sent" well before the server has finished with it: the object
+    // store still has to accept the final part and the app hashes it and writes the row.
+    // A full, frozen bar during that window is indistinguishable from a stalled upload,
+    // so the bar goes indeterminate (it visibly keeps moving) until onSuccess fires.
+    var lastPct = 0;
+    function showProgress(pct) {
+      li.classList.remove('finalising');
+      bar.value = pct;
+    }
+    function showFinalising() {
+      if (li.classList.contains('finalising')) return;
+      li.classList.add('finalising');
+      bar.removeAttribute('value'); // native indeterminate <progress>
+      status.textContent = msg('upload.js.finalising');
+      status.className = 'q-status';
+    }
+
     var upload = new tus.Upload(file, {
       endpoint: cfg.tusEndpoint,
       headers: authHeaders,
@@ -113,6 +130,7 @@
         return !(st >= 400 && st < 500);
       },
       onError: function (err) {
+        showProgress(lastPct); // back to a determinate bar: nothing is in flight any more
         status.textContent = msg('upload.js.error', { msg: parseError(err) });
         status.className = 'q-status error';
         retryBtn.hidden = false; cancelBtn.hidden = true;
@@ -120,12 +138,15 @@
       },
       onProgress: function (sent, total) {
         var pct = total ? Math.floor(sent * 100 / total) : 0;
-        bar.value = pct;
+        lastPct = pct;
+        if (total && sent >= total) { showFinalising(); return; }
+        showProgress(pct);
         status.textContent = pct + '% · ' + fmtSize(sent) + ' / ' + fmtSize(total);
         status.className = 'q-status';
       },
       onSuccess: function () {
-        bar.value = 100;
+        li.classList.add('done');
+        showProgress(100);
         status.textContent = msg('upload.js.done') + sizeNote;
         status.className = 'q-status done';
         cancelBtn.hidden = true; retryBtn.hidden = true;
@@ -134,12 +155,14 @@
     });
 
     cancelBtn.addEventListener('click', function () {
+      showProgress(lastPct);
       upload.abort(true).then(function () {
         status.textContent = msg('upload.js.cancelled'); status.className = 'q-status error'; cancelBtn.hidden = true; refreshFiles();
       }).catch(function () { status.textContent = msg('upload.js.cancelled_local'); status.className = 'q-status error'; cancelBtn.hidden = true; });
     });
     retryBtn.addEventListener('click', function () {
       retryBtn.hidden = true; cancelBtn.hidden = false; status.className = 'q-status'; status.textContent = msg('upload.js.retrying');
+      showProgress(lastPct);
       startOrResume();
     });
 

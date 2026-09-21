@@ -234,6 +234,7 @@ const en = {
   'upload.none_yet': 'No files uploaded yet.',
   'upload.list_failed': 'Could not load the list: {msg}',
   'upload.terminal': 'Upload from the terminal',
+  'upload.terminal_hint': '(curl, scripts, resumable transfers)',
   'upload.terminal_intro': 'Replace {path} with the path to your file (spaces are fine). A non-zero exit code means an error; the response is JSON.',
   'upload.snippet.single': 'One file',
   'upload.snippet.multi': 'Several files',
@@ -253,6 +254,7 @@ const en = {
   'upload.js.resuming': 'resuming previous upload…',
   'upload.js.retrying': 'retrying…',
   'upload.js.done': 'complete',
+  'upload.js.finalising': 'all bytes sent, the server is finishing…',
   'upload.js.cancelled': 'cancelled',
   'upload.js.cancelled_local': 'cancelled (locally)',
   'upload.js.status.uploading': 'in progress',
@@ -472,6 +474,7 @@ const pl: Record<keyof typeof en, string> = {
   'upload.none_yet': 'Brak przesłanych plików.',
   'upload.list_failed': 'Nie udało się pobrać listy: {msg}',
   'upload.terminal': 'Upload z terminala',
+  'upload.terminal_hint': '(curl, skrypty, wznawiane transfery)',
   'upload.terminal_intro': 'Zastąp {path} ścieżką do swojego pliku (może zawierać spacje). Kod wyjścia różny od zera oznacza błąd; odpowiedź to JSON.',
   'upload.snippet.single': 'Jeden plik',
   'upload.snippet.multi': 'Kilka plików',
@@ -490,6 +493,7 @@ const pl: Record<keyof typeof en, string> = {
   'upload.js.resuming': 'wznawianie poprzedniego uploadu…',
   'upload.js.retrying': 'ponawianie…',
   'upload.js.done': 'ukończony',
+  'upload.js.finalising': 'wysłano wszystkie dane, serwer kończy zapis…',
   'upload.js.cancelled': 'anulowano',
   'upload.js.cancelled_local': 'anulowano (lokalnie)',
   'upload.js.status.uploading': 'w trakcie',
@@ -542,7 +546,8 @@ export function negotiateLang(acceptLanguage: string | undefined): Lang {
 export function clientMessages(lang: Lang): Record<string, string> {
   const keys: MessageKey[] = [
     'upload.js.queued', 'upload.js.too_large', 'upload.js.error', 'upload.js.starting', 'upload.js.resuming', 'upload.js.retrying',
-    'upload.js.done', 'upload.js.cancelled', 'upload.js.cancelled_local', 'upload.js.status.uploading', 'upload.js.status.complete',
+    'upload.js.done', 'upload.js.finalising', 'upload.js.cancelled', 'upload.js.cancelled_local',
+    'upload.js.status.uploading', 'upload.js.status.complete',
     'upload.none_yet', 'upload.list_failed', 'common.copied', 'common.copy_manual', 'common.cancel', 'common.retry',
   ];
   return Object.fromEntries(keys.map((k) => [k, t(lang, k)]));

@@ -66,7 +66,7 @@ export function uploadPage(d: UploadPageData): string {
       <section class="card">
         <h2>${t('upload.send')}</h2>
         <div id="dropzone" class="dropzone" tabindex="0">
-          <p><strong>${t('upload.drop_here')}</strong> ${t('upload.or')} <label class="link" for="file-input">${t('upload.choose')}</label>.</p>
+          <p class="dropzone-lead"><strong>${t('upload.drop_here')}</strong> ${t('upload.or')} <label class="link" for="file-input">${t('upload.choose')}</label>.</p>
           <input id="file-input" type="file" multiple hidden>
           <p class="muted small">${t('upload.resume_hint')}</p>
         </div>
@@ -80,14 +80,18 @@ export function uploadPage(d: UploadPageData): string {
       </section>
 
       <section class="card">
-        <h2>${t('upload.terminal')}</h2>
-        <p class="small">${raw(t('upload.terminal_intro', { path: `<code>${p1}</code>` }))}</p>
-        ${snippet(t('upload.snippet.single'), curlSingle)}
-        ${snippet(t('upload.snippet.multi'), curlMulti)}
-        ${snippet(t('upload.snippet.env'), curlEnv)}
-        ${snippet(t('upload.snippet.list'), curlList)}
-        ${snippet(raw(t('upload.snippet.resumable', { script: '<a href="/static/inletbox-upload.sh" download>inletbox-upload.sh</a>' })), resumable)}
-        <p class="warning small">${raw(t('upload.history_warning', { file: '<code>~/.bash_history</code>', opt: '<code>HISTCONTROL=ignorespace</code>' }))}</p>
+        <!-- Collapsed by default: most people drop a file, and the token-bearing
+             commands should not be on screen unless they are actually wanted. -->
+        <details class="collapsible">
+          <summary>${t('upload.terminal')} <span class="summary-hint">${t('upload.terminal_hint')}</span></summary>
+          <p class="small">${raw(t('upload.terminal_intro', { path: `<code>${p1}</code>` }))}</p>
+          ${snippet(t('upload.snippet.single'), curlSingle)}
+          ${snippet(t('upload.snippet.multi'), curlMulti)}
+          ${snippet(t('upload.snippet.env'), curlEnv)}
+          ${snippet(t('upload.snippet.list'), curlList)}
+          ${snippet(raw(t('upload.snippet.resumable', { script: '<a href="/static/inletbox-upload.sh" download>inletbox-upload.sh</a>' })), resumable)}
+          <p class="warning small">${raw(t('upload.history_warning', { file: '<code>~/.bash_history</code>', opt: '<code>HISTCONTROL=ignorespace</code>' }))}</p>
+        </details>
       </section>`,
   });
 }
