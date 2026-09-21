@@ -1,11 +1,17 @@
 name: Release
 
-# Turns a pushed vX.Y.Z tag into a GitHub Release with generated notes.
-# Nothing here needs a personal token: the runner's GITHUB_TOKEN is enough,
-# which is the whole point — releases should not depend on someone's laptop.
+# Turns a pushed vX.Y.Z tag into a GitHub Release whose notes come from CHANGELOG.md.
 #
-# workflow_dispatch exists to backfill tags that were pushed before this
-# workflow did (v0.1.0, v0.1.1): run it and give it the tag name.
+# Notes are NOT auto-generated. `--generate-notes` builds its list from merged pull
+# requests, and this repository commits straight to main, so it produced a release body
+# containing nothing but a compare link. CHANGELOG.md is the source of truth instead, and
+# a tag without a section there fails the job rather than publishing an empty release.
+#
+# Nothing here needs a personal token: the runner's GITHUB_TOKEN is enough, which is the
+# point — releases should not depend on what is installed on someone's laptop.
+#
+# workflow_dispatch takes a tag name, to backfill older tags or to re-sync a release body
+# after CHANGELOG.md is corrected.
 
 on:
   push:
@@ -13,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to release (e.g. v0.1.1)'
+        description: 'Existing tag to release or re-sync (e.g. v0.1.1)'
         required: true
         type: string
 
@@ -22,18 +28,17 @@ permissions:
 
 jobs:
   release:
-    name: Create the GitHub Release
+    name: Publish the GitHub Release
     runs-on: ubuntu-latest
     permissions:
-      contents: write # creating a release writes to the repository
+      contents: write # creating or editing a release writes to the repository
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # notes are generated against the previous tag
+          fetch-depth: 0 # the previous tag is needed for the compare link
 
-      - name: Create release (idempotent)
+      - name: Build the notes from CHANGELOG.md
         env:
-          GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
@@ -41,11 +46,39 @@ jobs:
             echo "::error::tag ${TAG} does not exist"
             exit 1
           fi
-          if gh release view "${TAG}" >/dev/null 2>&1; then
-            echo "release ${TAG} already exists, nothing to do"
-            exit 0
+
+          # The section runs from "## [x.y.z]" to the next section or to the link
+          # definitions at the bottom of the file.
+          awk -v v="${TAG#v}" '
+            $0 ~ "^## \\[" v "\\]" { found = 1; next }
+            found && /^## \[/      { exit }
+            found && /^\[[^]]+\]: / { exit }
+            found                  { print }
+          ' CHANGELOG.md > notes.md
+
+          if [ -z "$(tr -d '[:space:]' < notes.md)" ]; then
+            echo "::error::CHANGELOG.md has no section for ${TAG#v} — add one before tagging"
+            exit 1
           fi
-          gh release create "${TAG}" \
-            --title "${TAG}" \
-            --generate-notes \
-            --verify-tag
+
+          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          if [ -n "${PREV}" ]; then
+            printf '\n**Full Changelog**: %s/%s/compare/%s...%s\n' \
+              "${GITHUB_SERVER_URL}" "${GITHUB_REPOSITORY}" "${PREV}" "${TAG}" >> notes.md
+          fi
+
+          echo "--- notes for ${TAG} ---"
+          cat notes.md
+
+      - name: Publish (create, or re-sync an existing release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "release ${TAG} exists, re-syncing its notes from CHANGELOG.md"
+            gh release edit "${TAG}" --title "${TAG}" --notes-file notes.md
+          else
+            gh release create "${TAG}" --title "${TAG}" --notes-file notes.md --verify-tag
+          fi

@@ -19,6 +19,9 @@ no self-registration.
 - **Light and dark theme:** follows the operating system / browser preference
   (`prefers-color-scheme`). No toggle, no script, no cookie — nothing to configure.
 
+What changed between releases is in [CHANGELOG.md](CHANGELOG.md); each version's section
+there is also the body of its [GitHub Release](https://github.com/pan-dolina/inletbox/releases).
+
 ---
 
 ## Table of contents
