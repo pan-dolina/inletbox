@@ -61,7 +61,7 @@ body:
       description: >
         Redact tokens. Server logs already replace them with [redacted]; the browser
         network tab does not.
-      render: text
+      render: shell
 
   - type: checkboxes
     id: proxy
