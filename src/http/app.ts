@@ -31,7 +31,7 @@ export function createApp(ctx: AppContext): Express {
     setAppVersion((JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as { version?: string }).version ?? '0.0.0');
   } catch { /* keep the default: a missing package.json must not stop the server */ }
   const h = createHash('sha256');
-  for (const f of ['public/style.css', 'public/upload.js', 'public/admin.js', 'node_modules/tus-js-client/dist/tus.min.js']) {
+  for (const f of ['public/style.css', 'public/upload.js', 'public/admin.js', 'public/inletbox-mark.png', 'node_modules/tus-js-client/dist/tus.min.js']) {
     try { h.update(fs.readFileSync(path.join(ROOT, f))); } catch { /* missing asset: version still changes when others do */ }
   }
   h.update(JSON.stringify(ctx.cfg.brand));

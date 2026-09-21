@@ -375,6 +375,29 @@ describe('upload page without optional limits', () => {
   });
 });
 
+describe('project mark in the top bar', () => {
+  it('serves a transparent mark and shows it opposite the operator branding', async () => {
+    const res = await fetch(`${app.base}/static/inletbox-mark.png`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('image/png');
+    const png = Buffer.from(await res.arrayBuffer());
+    expect(png.subarray(0, 8).toString('latin1')).toBe('\x89PNG\r\n\x1a\n');
+    // IHDR colour type lives at byte 25; 6 is RGBA. Without an alpha channel the mark
+    // would show a white box on the dark top bar.
+    expect(png[25]).toBe(6);
+
+    const l = app.mkLink(app.mkCase().id);
+    for (const url of [`${app.base}/`, `${app.base}/admin/login`, `${app.base}/u/${l.token}`]) {
+      const body = await (await fetch(url)).text();
+      expect(body).toContain('class="project-mark"');
+      // Opposite the brand: the brand opens the bar, the mark closes it.
+      expect(body.indexOf('class="brand"')).toBeLessThan(body.indexOf('class="project-mark"'));
+      // Cache-busted with the rest of the static assets.
+      expect(body).toMatch(/\/static\/inletbox-mark\.png\?v=[a-f0-9]+/);
+    }
+  });
+});
+
 describe('release version in the footer', () => {
   it('shows the running version on public and admin pages, matching package.json', async () => {
     const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
