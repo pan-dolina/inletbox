@@ -1,0 +1,51 @@
+name: Release
+
+# Turns a pushed vX.Y.Z tag into a GitHub Release with generated notes.
+# Nothing here needs a personal token: the runner's GITHUB_TOKEN is enough,
+# which is the whole point — releases should not depend on someone's laptop.
+#
+# workflow_dispatch exists to backfill tags that were pushed before this
+# workflow did (v0.1.0, v0.1.1): run it and give it the tag name.
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release (e.g. v0.1.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Create the GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # creating a release writes to the repository
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # notes are generated against the previous tag
+
+      - name: Create release (idempotent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "::error::tag ${TAG} does not exist"
+            exit 1
+          fi
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "release ${TAG} already exists, nothing to do"
+            exit 0
+          fi
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --generate-notes \
+            --verify-tag
