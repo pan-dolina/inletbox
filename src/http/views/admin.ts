@@ -198,15 +198,20 @@ export function auditPage(v: AdminViewContext, rows: AuditRow[]): string {
     lang: v.lang, title: t('nav.audit'), nav: adminNav(v), path: v.path,
     body: html`<section class="card">
       <h1>${t('audit.title', { n: rows.length })}</h1>
-      <table class="small">
+      <!-- Opaque ids and a raw JSON details blob are both unbounded, so every wide cell
+           has to be breakable and the table scrolls inside its card rather than pushing
+           the page sideways. -->
+      <div class="table-scroll">
+      <table class="small audit">
         <thead><tr><th>${t('audit.col.time')}</th><th>${t('audit.col.actor')}</th><th>${t('audit.col.action')}</th><th>${t('audit.col.case')}</th><th>${t('audit.col.link')}</th><th>${t('audit.col.file')}</th><th>${t('audit.col.ip')}</th><th>${t('audit.col.details')}</th></tr></thead>
         <tbody>${rows.map((r) => html`<tr>
-          <td class="nowrap">${fmtDate(r.ts, v.lang)}</td><td>${r.actor_type}:${r.actor_id ?? '-'}</td><td>${r.action}</td>
-          <td class="mono">${r.case_id ? html`<a href="/admin/cases/${r.case_id}">${r.case_id}</a>` : ''}</td>
-          <td class="mono">${r.link_id ?? ''}</td><td class="mono">${r.file_id ?? ''}</td><td>${r.ip ?? ''}</td>
-          <td class="mono">${r.details ?? ''}</td>
+          <td class="nowrap">${fmtDate(r.ts, v.lang)}</td><td class="id">${r.actor_type}:${r.actor_id ?? '-'}</td><td>${r.action}</td>
+          <td class="mono id">${r.case_id ? html`<a href="/admin/cases/${r.case_id}">${r.case_id}</a>` : ''}</td>
+          <td class="mono id">${r.link_id ?? ''}</td><td class="mono id">${r.file_id ?? ''}</td><td class="nowrap">${r.ip ?? ''}</td>
+          <td class="mono details">${r.details ? html`<span>${r.details}</span>` : ''}</td>
         </tr>`)}</tbody>
       </table>
+      </div>
     </section>`,
   });
 }

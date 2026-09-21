@@ -140,6 +140,14 @@ table.small { font-size: .82rem; }
 .nowrap { white-space: nowrap; }
 .filename { word-break: break-all; max-width: 380px; }
 
+/* The audit log cannot shorten its own content: opaque ids and a raw JSON details blob.
+   The ids break anywhere; the JSON is capped by an inner inline-block, because a
+   max-width on the cell itself is only a hint to auto table layout and gets ignored.
+   The scroll container is the last resort on narrow screens. */
+.table-scroll { overflow-x: auto; }
+table.audit td.id { word-break: break-all; }
+table.audit td.details > span { display: inline-block; max-width: 24rem; white-space: pre-wrap; word-break: break-word; }
+
 .badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; background: var(--badge-bg); color: var(--badge-text); vertical-align: middle; }
 .badge-open, .badge-active, .badge-complete { background: var(--badge-ok-bg); color: var(--badge-ok-text); }
 .badge-closed, .badge-revoked, .badge-deleted, .badge-aborted { background: var(--badge-bad-bg); color: var(--badge-bad-text); }
@@ -198,6 +206,7 @@ table.small { font-size: .82rem; }
   td { border: none; padding: .15rem .2rem; }
   td::before { content: attr(data-label); color: var(--muted); font-size: .75rem; display: block; }
   .filename { max-width: none; }
+  table.audit td.details > span { max-width: none; }
 }
 
 /* The hidden attribute must win over display rules on .btn etc. */

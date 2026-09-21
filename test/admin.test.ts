@@ -115,6 +115,23 @@ describe('admin panel', () => {
     expect(actions).toEqual(expect.arrayContaining(['file.delete', 'file.download', 'upload.complete', 'admin.login']));
   });
 
+  it('keeps the audit log inside its card: breakable ids and a width-capped details blob', async () => {
+    const s = await app.adminLogin();
+    const c = app.mkCase();
+    const l = app.mkLink(c.id);
+    // A long file name makes the JSON details column as wide as it ever gets in practice.
+    await putFile(app, l.token, 'export + dane osobowe (kopia robocza) 2026-09-18.zip', randomBytes(2048));
+
+    const body = await (await fetch(`${app.base}/admin/audit`, { headers: { cookie: s.cookie } })).text();
+    // The CSS that stops this table from widening the page keys off all three of these.
+    expect(body).toContain('<div class="table-scroll">');
+    expect(body).toContain('<table class="small audit">');
+    expect(body).toContain('class="mono id"');
+    // The details blob is capped by an inner element: a max-width on the cell itself is
+    // only a hint to auto table layout and browsers are free to ignore it.
+    expect(body).toMatch(/<td class="mono details"><span>\{&quot;kind&quot;/);
+  });
+
   it('serves the tus client and helper script locally (no external scripts)', async () => {
     expect((await fetch(`${app.base}/static/vendor/tus.min.js`)).status).toBe(200);
     expect((await fetch(`${app.base}/static/inletbox-upload.sh`)).status).toBe(200);
