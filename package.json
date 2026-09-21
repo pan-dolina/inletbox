@@ -1,12 +1,12 @@
 {
   "name": "inletbox",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "Self-hosted private file drop box: admins create cases and upload links, external parties upload files they cannot read back.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=26"
   },
   "scripts": {
     "dev": "node --env-file-if-exists=.env --import tsx --watch src/server.ts",
@@ -34,7 +34,7 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
-    "@types/node": "^24.13.6",
+    "@types/node": "^26.6.2",
     "@types/qrcode": "^1.5.6",
     "@vitest/coverage-v8": "^5.0.1",
     "tsx": "^4.23.15",

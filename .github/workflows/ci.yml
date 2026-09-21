@@ -10,25 +10,21 @@ permissions:
 
 jobs:
   test:
-    name: Typecheck and tests (Node ${{ matrix.node }})
+    name: Typecheck and tests
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # 24 is the supported floor (package.json engines); 26 is what the Docker image ships.
-        node: [24, 26]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ matrix.node }}
+          # 26 is both the supported floor (package.json engines) and what the
+          # Docker image ships, so there is only one version worth testing.
+          node-version: 26
           cache: npm
       - run: npm ci
       - run: npm run typecheck
       - name: Tests with coverage (local storage)
         run: npm run test:coverage
       - name: Upload coverage
-        if: matrix.node == 26
         uses: actions/upload-artifact@v7
         with:
           name: coverage

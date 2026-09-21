@@ -8,7 +8,7 @@ anything**. The administrator collects the files.
 This is not a network drive and not a sharing tool: no previews, no public downloads,
 no self-registration.
 
-- **Stack:** Node.js 24+ (TypeScript, Express 5), SQLite (built-in `node:sqlite`), local
+- **Stack:** Node.js 26+ (TypeScript, Express 5), SQLite (built-in `node:sqlite`), local
   disk or S3/MinIO storage, resumable uploads via the **tus** protocol (`@tus/server` +
   `tus-js-client`). No native modules.
 - **Deployment:** one container + one volume; optional MinIO profile for S3 testing.
@@ -537,7 +537,7 @@ Every push and pull request runs, besides the tests:
 | **Dependabot** (npm, GitHub Actions, Docker), weekly | updates, with minor/patch grouped into one PR |
 
 Status at release: 99/99 green on the local backend and 99/99 on MinIO
-(`quay.io/minio/minio`) on Node 24 and Node 26, the Docker image builds, both Trivy scans
+(`quay.io/minio/minio`) on Node 26, the Docker image builds, both Trivy scans
 and gitleaks are clean, `npm audit` reports no vulnerabilities, and the CLI script was
 verified by hand (killed halfway through an 8 MB file, resumed from the stored offset,
 identical content). The same checks run in GitHub Actions on every push.
