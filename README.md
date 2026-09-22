@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="design/readme-logo.png" alt="inletbox" width="340">
+</p>
+
 # inletbox
 
 A private, self-hosted **file drop box**. An administrator creates a case, generates an
