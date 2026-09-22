@@ -375,6 +375,24 @@ describe('upload page without optional limits', () => {
   });
 });
 
+describe('static asset caching', () => {
+  it('freezes hashed URLs for a year and keeps unhashed ones revalidating', async () => {
+    const hashed = await fetch(`${app.base}/static/style.css?v=deadbeef1234`);
+    expect(hashed.status).toBe(200);
+    expect(hashed.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+
+    // The CLI helper is linked without a hash so it can be curled by hand; freezing it
+    // would mean a fixed URL never picking up a fix.
+    const plain = await fetch(`${app.base}/static/inletbox-upload.sh`);
+    expect(plain.status).toBe(200);
+    expect(plain.headers.get('cache-control')).toBe('public, max-age=3600');
+
+    // An empty ?v= is not a hash.
+    const empty = await fetch(`${app.base}/static/style.css?v=`);
+    expect(empty.headers.get('cache-control')).toBe('public, max-age=3600');
+  });
+});
+
 describe('project mark in the top bar', () => {
   it('serves a transparent mark and shows it opposite the operator branding', async () => {
     const res = await fetch(`${app.base}/static/inletbox-logo.png`);

@@ -39,7 +39,16 @@ export function createApp(ctx: AppContext): Express {
   app.use('/brand', brandRouter(ctx.cfg.brand));
 
   // Static assets: our own CSS/JS, the tus browser client from node_modules, and the CLI helper script.
-  const staticOpts = { index: false, dotfiles: 'ignore' as const, maxAge: '1h', etag: true };
+  // Anything referenced through asset() carries a content hash in ?v=, so it can be frozen for a
+  // year — a changed file gets a new URL. The same files are also reachable without the hash (the
+  // upload script is linked verbatim so people can curl it), and those must keep revalidating or
+  // an upgrade never reaches anyone. express.static would override this, hence cacheControl: false.
+  app.use('/static', (req, res, next) => {
+    const hashed = typeof req.query.v === 'string' && req.query.v.length > 0;
+    res.setHeader('Cache-Control', hashed ? 'public, max-age=31536000, immutable' : 'public, max-age=3600');
+    next();
+  });
+  const staticOpts = { index: false, dotfiles: 'ignore' as const, cacheControl: false, etag: true };
   app.use('/static/vendor/tus.min.js', express.static(path.join(ROOT, 'node_modules/tus-js-client/dist/tus.min.js'), staticOpts));
   app.use('/static/inletbox-upload.sh', express.static(path.join(ROOT, 'scripts/inletbox-upload.sh'), { ...staticOpts, setHeaders: (res) => res.type('text/plain') }));
   app.use('/static', express.static(path.join(ROOT, 'public'), staticOpts));
