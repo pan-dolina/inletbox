@@ -103,7 +103,9 @@ pre { background: var(--code-bg); border: 1px solid var(--border); border-radius
 .brand { color: #fff; text-decoration: none; font-weight: 700; letter-spacing: .02em; display: inline-flex; align-items: center; }
 .brand-logo { height: 32px; width: auto; max-width: 220px; display: block; }
 .topbar-right { display: flex; align-items: center; gap: 1rem; }
-.project-mark { height: 28px; width: auto; display: block; flex: 0 0 auto; opacity: .92; }
+/* The logo is used unmodified and carries its own white background, so it needs a little
+   rounding to sit on a dark bar rather than look like a pasted rectangle. */
+.project-mark { height: 44px; width: auto; display: block; flex: 0 0 auto; border-radius: 6px; }
 .nav { display: flex; align-items: center; gap: 1rem; }
 .nav a { color: #cfd6de; text-decoration: none; }
 .nav a:hover { color: #fff; }
@@ -206,6 +208,7 @@ table.audit td.details > span { display: inline-block; max-width: 24rem; white-s
   /* Five nav items do not fit 375px on one line; without this the last one runs past
      the container edge. Pre-existing, but the mark sits next to them now. */
   .nav { flex-wrap: wrap; gap: .5rem .9rem; }
+  .project-mark { height: 36px; }
   table, thead, tbody, th, td, tr { display: block; }
   thead { display: none; }
   tr { border-bottom: 1px solid var(--border); padding: .4rem 0; }

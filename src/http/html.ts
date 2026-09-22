@@ -98,10 +98,10 @@ ${b.logoPath ? html`<link rel="icon" href="/brand/logo">` : ''}
     <a class="brand" href="${opts.nav ? '/admin' : '/'}">${b.logoPath ? html`<img class="brand-logo" src="/brand/logo" alt="${b.name}">` : b.name}</a>
     <div class="topbar-right">
       ${opts.nav ?? ''}
-      <!-- The project mark, opposite the operator's branding. Deliberately the icon
-           without the wordmark: the topbar is dark in both themes and the wordmark's
-           "box" is near-black, and a 32px-tall vertical lockup is illegible anyway. -->
-      <img class="project-mark" src="${asset('/static/inletbox-mark.png')}" alt="inletbox" title="inletbox" width="26" height="28">
+      <!-- The project logo, opposite the operator's branding. Used unmodified, so it
+           brings its own white background; the top bar is dark in both themes and
+           neither brand colour is readable directly on it. -->
+      <img class="project-mark" src="${asset('/static/inletbox-logo.png')}" alt="inletbox" title="inletbox" width="59" height="44">
     </div>
   </div>
 </header>

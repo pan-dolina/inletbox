@@ -377,14 +377,14 @@ describe('upload page without optional limits', () => {
 
 describe('project mark in the top bar', () => {
   it('serves a transparent mark and shows it opposite the operator branding', async () => {
-    const res = await fetch(`${app.base}/static/inletbox-mark.png`);
+    const res = await fetch(`${app.base}/static/inletbox-logo.png`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('image/png');
     const png = Buffer.from(await res.arrayBuffer());
     expect(png.subarray(0, 8).toString('latin1')).toBe('\x89PNG\r\n\x1a\n');
-    // IHDR colour type lives at byte 25; 6 is RGBA. Without an alpha channel the mark
-    // would show a white box on the dark top bar.
-    expect(png[25]).toBe(6);
+    // Served byte for byte as supplied, so it must match the master in design/.
+    const master = fs.readFileSync(new URL('../design/inletbox-logo.png', import.meta.url));
+    expect(png.equals(master)).toBe(true);
 
     const l = app.mkLink(app.mkCase().id);
     for (const url of [`${app.base}/`, `${app.base}/admin/login`, `${app.base}/u/${l.token}`]) {
@@ -393,7 +393,7 @@ describe('project mark in the top bar', () => {
       // Opposite the brand: the brand opens the bar, the mark closes it.
       expect(body.indexOf('class="brand"')).toBeLessThan(body.indexOf('class="project-mark"'));
       // Cache-busted with the rest of the static assets.
-      expect(body).toMatch(/\/static\/inletbox-mark\.png\?v=[a-f0-9]+/);
+      expect(body).toMatch(/\/static\/inletbox-logo\.png\?v=[a-f0-9]+/);
     }
   });
 });
