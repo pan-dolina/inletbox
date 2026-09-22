@@ -1,507 +1,63 @@
 /**
- * Minimal i18n: two dictionaries with identical keys, `{param}` placeholders,
- * language detected per request from a cookie or Accept-Language (default: en).
+ * Minimal i18n: one dictionary per language in src/locales/ with identical keys,
+ * `{param}` placeholders, language detected per request from a cookie or
+ * Accept-Language (default: en).
+ *
+ * The languages are the 24 official languages of the European Union. English is the
+ * source; every other dictionary is typed as `Messages`, so a missing key is a compile
+ * error, and test/i18n.test.ts checks that each translation keeps the placeholders.
  */
+import { bg } from './locales/bg.js';
+import { cs } from './locales/cs.js';
+import { da } from './locales/da.js';
+import { de } from './locales/de.js';
+import { el } from './locales/el.js';
+import { en } from './locales/en.js';
+import { es } from './locales/es.js';
+import { et } from './locales/et.js';
+import { fi } from './locales/fi.js';
+import { fr } from './locales/fr.js';
+import { ga } from './locales/ga.js';
+import { hr } from './locales/hr.js';
+import { hu } from './locales/hu.js';
+import { it } from './locales/it.js';
+import { lt } from './locales/lt.js';
+import { lv } from './locales/lv.js';
+import { mt } from './locales/mt.js';
+import { nl } from './locales/nl.js';
+import { pl } from './locales/pl.js';
+import { pt } from './locales/pt.js';
+import { ro } from './locales/ro.js';
+import { sk } from './locales/sk.js';
+import { sl } from './locales/sl.js';
+import { sv } from './locales/sv.js';
 
-export type Lang = 'en' | 'pl';
-export const LANGS: Lang[] = ['en', 'pl'];
+export type Lang =
+  | 'bg' | 'cs' | 'da' | 'de' | 'el' | 'en' | 'es' | 'et' | 'fi' | 'fr' | 'ga' | 'hr'
+  | 'hu' | 'it' | 'lt' | 'lv' | 'mt' | 'nl' | 'pl' | 'pt' | 'ro' | 'sk' | 'sl' | 'sv';
 export const DEFAULT_LANG: Lang = 'en';
 export const LANG_COOKIE = 'inletbox_lang';
 
-const en = {
-  // ---- layout / common
-  'app.tagline': 'private file drop box',
-  'common.back_to_cases': '← Cases',
-  'common.home': 'Home',
-  'common.copy': 'Copy',
-  'common.copied': 'Copied',
-  'common.copy_manual': 'Select and copy manually',
-  'common.save': 'Save',
-  'common.create': 'Create',
-  'common.cancel': 'Cancel',
-  'common.retry': 'Retry',
-  'common.never': 'never',
-  'common.unlimited': 'no expiry',
-  'common.none': '—',
-  'common.optional': 'optional',
-  'common.loading': 'Loading…',
-  'common.yes': 'Yes',
-  'common.language': 'Language',
-
-  // ---- nav
-  'nav.cases': 'Cases',
-  'nav.audit': 'Audit log',
-  'nav.security': 'Security',
-  'nav.logout': 'Log out',
-
-  // ---- errors / pages
-  'error.not_found.title': 'Not found',
-  'error.page_missing': 'This page does not exist.',
-  'error.case_missing': 'This case does not exist.',
-  'error.link_missing': 'This link does not exist.',
-  'error.file_missing': 'The file does not exist or is not available.',
-  'error.file_not_exist': 'The file does not exist.',
-  'error.storage_missing.title': 'File missing from storage',
-  'error.storage_missing': 'The metadata exists but the object has disappeared from storage. Run the cleanup to flag the file as missing.',
-  'error.server.title': 'Server error',
-  'error.server': 'An unexpected error occurred.',
-  'error.bad_request.title': 'Bad request',
-  'error.cross_site': 'Cross-site request blocked',
-  'error.csrf': 'Invalid CSRF token',
-
-  // ---- link states (shown to uploaders)
-  'link.invalid.title': 'Invalid link',
-  'link.invalid': 'This upload link does not exist.',
-  'link.unavailable.title': 'Link unavailable',
-  'link.expired': 'This link has expired.',
-  'link.revoked': 'This link has been revoked.',
-  'link.case_closed': 'The case has been closed and no longer accepts files.',
-  'link.contact': 'Contact the person who gave you the link.',
-
-  // ---- login
-  'login.title': 'Administrator login',
-  'login.username': 'Username',
-  'login.password': 'Password',
-  'login.submit': 'Log in',
-  'login.failed': 'Invalid username or password.',
-  'login.too_many_codes': 'Too many wrong codes. Log in again.',
-  'login.account_locked': 'Too many wrong codes for this account. The second factor is locked for 15 minutes.',
-
-  // ---- second factor
-  'totp.title': 'Code from your authenticator app',
-  'totp.code_label': 'Code (6 digits) or recovery code',
-  'totp.confirm': 'Confirm',
-  'totp.cancel_logout': 'Cancel and log out',
-  'totp.invalid': 'Invalid code.',
-  'totp.attempts_left': 'Attempts left: {n}.',
-  'totp.locked_until': 'The account is temporarily locked after many wrong codes (until {until} UTC).',
-
-  // ---- security page
-  'security.title': 'Security of account “{user}”',
-  'security.required_notice': 'This instance requires two-factor authentication. The panel stays unavailable until TOTP is enabled.',
-  'security.status': 'Two-factor authentication (TOTP, RFC 6238): {state}.',
-  'security.enabled': 'enabled',
-  'security.disabled': 'disabled',
-  'security.recovery_left': 'Unused recovery codes: {n}.',
-  'security.recovery.title': 'Recovery codes',
-  'security.recovery.intro': 'Save them now in a safe place. Each works once and replaces the app code when you lose access to the app. They will not be shown again.',
-  'security.enable.title': 'Enable TOTP',
-  'security.enable.intro': 'You need an authenticator app (e.g. Aegis, Google Authenticator, 1Password, Bitwarden). Once enabled, logging in requires the password and a current code.',
-  'security.enable.start': 'Start setup',
-  'security.step1': 'Step 1: scan the code in your app',
-  'security.manual_key': 'Or enter the key manually:',
-  'security.key_params': 'Type: TOTP, SHA-1, 6 digits, 30 s. Issuer: {issuer}, account: {user}.',
-  'security.open_in_app': 'Open in authenticator app',
-  'security.on_phone': '(on a phone)',
-  'security.step2': 'Step 2: confirm with a code',
-  'security.code_from_app': 'Code from the app',
-  'security.enable.submit': 'Enable TOTP',
-  'security.pending_note': 'The key is temporary until confirmed; starting the setup again generates a new one.',
-  'security.current_code': 'Current code from the app',
-  'security.regenerate': 'Generate new codes (old ones stop working)',
-  'security.disable.title': 'Disable TOTP',
-  'security.disable.intro': 'Requires a current code from the app or a recovery code: the session alone (e.g. a stolen cookie) is not enough. If both the app and the recovery codes are lost, an operator can run {cmd} on the server.',
-  'security.disable.code': 'Code',
-  'security.disable.submit': 'Disable',
-  'security.disable.confirm': 'Disable two-factor authentication?',
-  'security.msg.enabled': 'Two-factor authentication is enabled.',
-  'security.msg.code_mismatch': 'The code does not match. Check the time on your phone and try again.',
-  'security.msg.invalid_code': 'Invalid code.',
-  'security.msg.regenerated': 'New recovery codes generated.',
-  'security.msg.required': 'This instance requires TOTP (ADMIN_REQUIRE_TOTP); it cannot be disabled.',
-  'security.msg.disabled': 'Two-factor authentication has been disabled.',
-  'security.password.title': 'Change password',
-  'security.password.current': 'Current password',
-  'security.password.new': 'New password (min. 12 characters)',
-  'security.password.confirm': 'Confirm new password',
-  'security.password.submit': 'Change password',
-  'security.password.mismatch': 'The new password and its confirmation do not match.',
-  'security.password.invalid_current': 'The current password is incorrect.',
-  'security.password.changed': 'Password changed. Other sessions of this account have been logged out.',
-
-  // ---- home page (public root)
-  'home.title': 'inletbox',
-  'home.message': 'This is a private file drop box. To upload files, use the link you were given by the person who requested them.',
-
-  // ---- cases
-  'cases.new': 'New case',
-  'cases.name': 'Name',
-  'cases.name_placeholder': 'e.g. Audit 2026/09 – Client X',
-  'cases.description_optional': 'Description (optional)',
-  'cases.description': 'Description',
-  'cases.list': 'Cases',
-  'cases.empty': 'No cases.',
-  'cases.col.name': 'Name',
-  'cases.col.status': 'Status',
-  'cases.col.links': 'Active links',
-  'cases.col.files': 'Files',
-  'cases.col.size': 'Size',
-  'cases.col.created': 'Created',
-  'case.open': 'open',
-  'case.closed': 'closed',
-  'case.close': 'Close case',
-  'case.reopen': 'Reopen',
-  'case.meta': 'ID: {id} · created {date}. A closed case accepts no uploads through any of its links.',
-  'case.saved': 'Saved.',
-  'case.closed_no_links': 'The case is closed – reopen it to generate links.',
-  'case.new_link.title': 'New link for “{label}”',
-  'case.new_link.intro': 'Copy it now. The token is stored only as a hash and cannot be recovered later – you can only generate a new link.',
-  'case.new_link.copy_now': 'Copy it now.',
-
-  // ---- links
-  'links.title': 'Upload links',
-  'links.intro': 'Each link is a separate recipient and a separate visibility scope: a person with the link sees only files sent through that link and cannot download or delete them. Everyone who knows the same link has identical access – the application does not distinguish between people using the same link.',
-  'links.generate': 'Generate a new link',
-  'links.label': 'Recipient label',
-  'links.label_placeholder': 'e.g. Jane Doe – accounting',
-  'links.expires': 'Valid until (UTC, optional)',
-  'links.max_file': 'Max file size (optional, ≤ {max})',
-  'links.max_file_placeholder': 'e.g. 500MB',
-  'links.max_files': 'Max number of files (optional)',
-  'links.max_total': 'Max total size (optional)',
-  'links.max_total_placeholder': 'e.g. 2GB',
-  'links.submit': 'Generate link',
-  'links.empty': 'No links.',
-  'links.col.recipient': 'Recipient',
-  'links.col.state': 'State',
-  'links.col.expires': 'Valid until',
-  'links.col.limits': 'Limits',
-  'links.col.usage': 'Usage',
-  'links.col.last_used': 'Last used',
-  'links.state.active': 'active',
-  'links.state.expired': 'expired',
-  'links.state.revoked': 'revoked',
-  'links.state.case_closed': 'case closed',
-  'links.limit.file': 'file ≤ {max}',
-  'links.limit.files': 'files ≤ {n}',
-  'links.limit.total': 'total ≤ {max}',
-  'links.usage': '{n} files, {size}',
-  'links.usage_in_progress': '{n} in progress ({size} reserved)',
-  'links.revoke': 'Revoke',
-  'links.revoke_confirm': 'Revoke link “{label}”? Uploads in progress will be aborted.',
-
-  // ---- files
-  'files.title': 'Files',
-  'files.empty': 'No files.',
-  'files.col.name': 'Name',
-  'files.col.recipient': 'Recipient (link)',
-  'files.col.size': 'Size',
-  'files.col.status': 'Status',
-  'files.col.uploaded': 'Uploaded',
-  'files.declared': '{size} (declared)',
-  'files.download': 'Download',
-  'files.delete': 'Delete',
-  'files.delete_confirm': 'Delete file “{name}”? This cannot be undone.',
-  'files.untrusted': 'Files are treated as untrusted: downloads are always attachments, nothing is rendered or executed on the server. Antivirus scanning is not part of this version.',
-  'files.status.uploading': 'in progress',
-  'files.status.complete': 'complete',
-  'files.status.aborted': 'aborted',
-  'files.status.expired': 'expired',
-  'files.status.missing': 'missing from storage',
-  'files.status.deleted': 'deleted',
-
-  // ---- audit
-  'audit.title': 'Audit log (last {n})',
-  'audit.col.time': 'Time',
-  'audit.col.actor': 'Actor',
-  'audit.col.action': 'Event',
-  'audit.col.case': 'Case',
-  'audit.col.link': 'Link',
-  'audit.col.file': 'File',
-  'audit.col.ip': 'IP',
-  'audit.col.details': 'Details',
-
-  // ---- upload page
-  'upload.title': 'Upload: {case}',
-  'upload.link_for': 'Link for:',
-  'upload.valid_until': 'valid until {date}',
-  'upload.limit.file': 'Maximum file size:',
-  'upload.limit.files': 'Maximum number of files:',
-  'upload.limit.total': 'Total data limit:',
-  'upload.used_n': '({n} used)',
-  'upload.used_size': '({size} used)',
-  'upload.send': 'Upload files',
-  'upload.drop_here': 'Drag files here',
-  'upload.or': 'or',
-  'upload.choose': 'choose from disk',
-  'upload.resume_hint': 'Large files are sent in parts and can be resumed after a lost connection. After reloading the page, pick the same file again and the upload resumes where it stopped.',
-  'upload.your_files': 'Your files',
-  'upload.your_files_intro': 'You only see files uploaded through this link. Files cannot be downloaded or deleted here – the administrator collects them.',
-  'upload.col.name': 'Name',
-  'upload.col.size': 'Size',
-  'upload.col.date': 'Date',
-  'upload.col.status': 'Status',
-  'upload.none_yet': 'No files uploaded yet.',
-  'upload.list_failed': 'Could not load the list: {msg}',
-  'upload.terminal': 'Upload from the terminal',
-  'upload.terminal_hint': '(curl, scripts, resumable transfers)',
-  'upload.terminal_intro': 'Replace {path} with the path to your file (spaces are fine). A non-zero exit code means an error; the response is JSON.',
-  'upload.snippet.single': 'One file',
-  'upload.snippet.multi': 'Several files',
-  'upload.snippet.env': 'Token in an environment variable (recommended)',
-  'upload.snippet.list': 'List uploaded files',
-  'upload.snippet.resumable': 'Large file with resume (script {script})',
-  'upload.history_warning': 'Note: a command containing the token ends up in your shell history (e.g. {file}). The export variant preceded by a space is not recorded when {opt} is set. Treat this link like a password and do not pass it on.',
-  'upload.path_placeholder': '/path/to/file.pdf',
-  'upload.path_placeholder2': '/path/report.pdf',
-  'upload.path_placeholder3': '/path/photo 1.jpg',
-  'upload.path_placeholder_big': '/path/to/large file.iso',
-  // client-side
-  'upload.js.queued': 'queued…',
-  'upload.js.too_large': 'too large: limit {max}',
-  'upload.js.error': 'error: {msg}',
-  'upload.js.starting': 'starting…',
-  'upload.js.resuming': 'resuming previous upload…',
-  'upload.js.retrying': 'retrying…',
-  'upload.js.done': 'complete',
-  'upload.js.finalising': 'all bytes sent, the server is finishing…',
-  'upload.js.cancelled': 'cancelled',
-  'upload.js.cancelled_local': 'cancelled (locally)',
-  'upload.js.status.uploading': 'in progress',
-  'upload.js.status.complete': 'complete',
-};
-
-const pl: Record<keyof typeof en, string> = {
-  'app.tagline': 'prywatna skrzynka wrzutowa',
-  'common.back_to_cases': '← Sprawy',
-  'common.home': 'Strona główna',
-  'common.copy': 'Kopiuj',
-  'common.copied': 'Skopiowano',
-  'common.copy_manual': 'Zaznacz i skopiuj ręcznie',
-  'common.save': 'Zapisz',
-  'common.create': 'Utwórz',
-  'common.cancel': 'Anuluj',
-  'common.retry': 'Ponów',
-  'common.never': 'nigdy',
-  'common.unlimited': 'bezterminowo',
-  'common.none': '—',
-  'common.optional': 'opcjonalnie',
-  'common.loading': 'Ładowanie…',
-  'common.yes': 'Tak',
-  'common.language': 'Język',
-
-  'nav.cases': 'Sprawy',
-  'nav.audit': 'Dziennik',
-  'nav.security': 'Bezpieczeństwo',
-  'nav.logout': 'Wyloguj',
-
-  'error.not_found.title': 'Nie znaleziono',
-  'error.page_missing': 'Strona nie istnieje.',
-  'error.case_missing': 'Taka sprawa nie istnieje.',
-  'error.link_missing': 'Taki link nie istnieje.',
-  'error.file_missing': 'Plik nie istnieje lub nie jest dostępny.',
-  'error.file_not_exist': 'Plik nie istnieje.',
-  'error.storage_missing.title': 'Brak pliku w storage',
-  'error.storage_missing': 'Metadane istnieją, ale obiekt zniknął ze storage. Uruchom sprzątanie, aby oznaczyć plik jako brakujący.',
-  'error.server.title': 'Błąd serwera',
-  'error.server': 'Wystąpił nieoczekiwany błąd.',
-  'error.bad_request.title': 'Nieprawidłowe żądanie',
-  'error.cross_site': 'Żądanie z innej witryny zostało zablokowane',
-  'error.csrf': 'Nieprawidłowy token CSRF',
-
-  'link.invalid.title': 'Nieprawidłowy link',
-  'link.invalid': 'Ten link do uploadu nie istnieje.',
-  'link.unavailable.title': 'Link niedostępny',
-  'link.expired': 'Ten link wygasł.',
-  'link.revoked': 'Ten link został unieważniony.',
-  'link.case_closed': 'Sprawa została zamknięta i nie przyjmuje już plików.',
-  'link.contact': 'Skontaktuj się z osobą, która przekazała Ci link.',
-
-  'login.title': 'Logowanie administratora',
-  'login.username': 'Nazwa użytkownika',
-  'login.password': 'Hasło',
-  'login.submit': 'Zaloguj',
-  'login.failed': 'Nieprawidłowa nazwa użytkownika lub hasło.',
-  'login.too_many_codes': 'Zbyt wiele błędnych kodów. Zaloguj się ponownie.',
-  'login.account_locked': 'Zbyt wiele błędnych kodów dla tego konta. Logowanie drugim składnikiem jest zablokowane na 15 minut.',
-
-  'totp.title': 'Kod z aplikacji uwierzytelniającej',
-  'totp.code_label': 'Kod (6 cyfr) lub kod zapasowy',
-  'totp.confirm': 'Potwierdź',
-  'totp.cancel_logout': 'Anuluj i wyloguj',
-  'totp.invalid': 'Nieprawidłowy kod.',
-  'totp.attempts_left': 'Pozostałe próby: {n}.',
-  'totp.locked_until': 'Konto jest tymczasowo zablokowane po wielu błędnych kodach (do {until} UTC).',
-
-  'security.title': 'Bezpieczeństwo konta „{user}”',
-  'security.required_notice': 'Ta instancja wymaga uwierzytelniania dwuskładnikowego. Do czasu włączenia TOTP panel jest niedostępny.',
-  'security.status': 'Uwierzytelnianie dwuskładnikowe (TOTP, RFC 6238): {state}.',
-  'security.enabled': 'włączone',
-  'security.disabled': 'wyłączone',
-  'security.recovery_left': 'Niewykorzystane kody zapasowe: {n}.',
-  'security.recovery.title': 'Kody zapasowe',
-  'security.recovery.intro': 'Zapisz je teraz w bezpiecznym miejscu. Każdy działa jeden raz i zastępuje kod z aplikacji, gdy stracisz do niej dostęp. Nie będą pokazane ponownie.',
-  'security.enable.title': 'Włącz TOTP',
-  'security.enable.intro': 'Potrzebna jest aplikacja uwierzytelniająca (np. Aegis, Google Authenticator, 1Password, Bitwarden). Po włączeniu logowanie wymaga hasła i bieżącego kodu.',
-  'security.enable.start': 'Rozpocznij konfigurację',
-  'security.step1': 'Krok 1: zeskanuj kod w aplikacji',
-  'security.manual_key': 'Albo wpisz klucz ręcznie:',
-  'security.key_params': 'Typ: TOTP, SHA-1, 6 cyfr, 30 s. Wystawca: {issuer}, konto: {user}.',
-  'security.open_in_app': 'Otwórz w aplikacji uwierzytelniającej',
-  'security.on_phone': '(na telefonie)',
-  'security.step2': 'Krok 2: potwierdź kodem',
-  'security.code_from_app': 'Kod z aplikacji',
-  'security.enable.submit': 'Włącz TOTP',
-  'security.pending_note': 'Klucz jest tymczasowy do czasu potwierdzenia; ponowne rozpoczęcie konfiguracji generuje nowy.',
-  'security.current_code': 'Bieżący kod z aplikacji',
-  'security.regenerate': 'Wygeneruj nowe kody (stare przestaną działać)',
-  'security.disable.title': 'Wyłącz TOTP',
-  'security.disable.intro': 'Wymaga bieżącego kodu z aplikacji albo kodu zapasowego: sama sesja (np. skradzione ciasteczko) nie wystarczy. Gdy dostęp do aplikacji i kodów zapasowych jest utracony, operator może użyć {cmd} na serwerze.',
-  'security.disable.code': 'Kod',
-  'security.disable.submit': 'Wyłącz',
-  'security.disable.confirm': 'Wyłączyć uwierzytelnianie dwuskładnikowe?',
-  'security.msg.enabled': 'Uwierzytelnianie dwuskładnikowe jest włączone.',
-  'security.msg.code_mismatch': 'Kod nie pasuje. Sprawdź czas w telefonie i spróbuj ponownie.',
-  'security.msg.invalid_code': 'Nieprawidłowy kod.',
-  'security.msg.regenerated': 'Wygenerowano nowe kody zapasowe.',
-  'security.msg.required': 'Ta instancja wymaga TOTP (ADMIN_REQUIRE_TOTP); nie można go wyłączyć.',
-  'security.msg.disabled': 'Uwierzytelnianie dwuskładnikowe zostało wyłączone.',
-  'security.password.title': 'Zmiana hasła',
-  'security.password.current': 'Bieżące hasło',
-  'security.password.new': 'Nowe hasło (min. 12 znaków)',
-  'security.password.confirm': 'Potwierdź nowe hasło',
-  'security.password.submit': 'Zmień hasło',
-  'security.password.mismatch': 'Nowe hasło i jego potwierdzenie nie są zgodne.',
-  'security.password.invalid_current': 'Bieżące hasło jest nieprawidłowe.',
-  'security.password.changed': 'Hasło zostało zmienione. Inne sesje tego konta zostały wylogowane.',
-
-  'home.title': 'inletbox',
-  'home.message': 'To prywatna skrzynka do przesyłania plików. Aby przesłać pliki, skorzystaj z linku otrzymanego od osoby, która ich potrzebuje.',
-
-  'cases.new': 'Nowa sprawa',
-  'cases.name': 'Nazwa',
-  'cases.name_placeholder': 'np. Audyt 2026/09 – Klient X',
-  'cases.description_optional': 'Opis (opcjonalnie)',
-  'cases.description': 'Opis',
-  'cases.list': 'Sprawy',
-  'cases.empty': 'Brak spraw.',
-  'cases.col.name': 'Nazwa',
-  'cases.col.status': 'Status',
-  'cases.col.links': 'Aktywne linki',
-  'cases.col.files': 'Pliki',
-  'cases.col.size': 'Rozmiar',
-  'cases.col.created': 'Utworzono',
-  'case.open': 'otwarta',
-  'case.closed': 'zamknięta',
-  'case.close': 'Zamknij sprawę',
-  'case.reopen': 'Otwórz ponownie',
-  'case.meta': 'ID: {id} · utworzono {date}. Zamknięta sprawa nie przyjmuje uploadów przez żaden ze swoich linków.',
-  'case.saved': 'Zapisano.',
-  'case.closed_no_links': 'Sprawa jest zamknięta – otwórz ją ponownie, aby generować linki.',
-  'case.new_link.title': 'Nowy link dla „{label}”',
-  'case.new_link.intro': 'Token jest przechowywany wyłącznie jako skrót i nie da się go później odzyskać – można jedynie wygenerować nowy link.',
-  'case.new_link.copy_now': 'Skopiuj go teraz.',
-
-  'links.title': 'Linki do uploadu',
-  'links.intro': 'Każdy link to osobny odbiorca i osobny zakres widoczności: osoba z linkiem widzi tylko pliki wysłane tym linkiem, nie może ich pobrać ani usunąć. Wszyscy, którzy znają ten sam link, mają identyczny dostęp – aplikacja nie rozróżnia osób posługujących się tym samym linkiem.',
-  'links.generate': 'Wygeneruj nowy link',
-  'links.label': 'Etykieta odbiorcy',
-  'links.label_placeholder': 'np. Jan Kowalski – księgowość',
-  'links.expires': 'Ważny do (UTC, opcjonalnie)',
-  'links.max_file': 'Maks. rozmiar pliku (opcjonalnie, ≤ {max})',
-  'links.max_file_placeholder': 'np. 500MB',
-  'links.max_files': 'Maks. liczba plików (opcjonalnie)',
-  'links.max_total': 'Maks. łączny rozmiar (opcjonalnie)',
-  'links.max_total_placeholder': 'np. 2GB',
-  'links.submit': 'Wygeneruj link',
-  'links.empty': 'Brak linków.',
-  'links.col.recipient': 'Odbiorca',
-  'links.col.state': 'Stan',
-  'links.col.expires': 'Ważny do',
-  'links.col.limits': 'Limity',
-  'links.col.usage': 'Użycie',
-  'links.col.last_used': 'Ostatnio użyty',
-  'links.state.active': 'aktywny',
-  'links.state.expired': 'wygasł',
-  'links.state.revoked': 'unieważniony',
-  'links.state.case_closed': 'sprawa zamknięta',
-  'links.limit.file': 'plik ≤ {max}',
-  'links.limit.files': 'pliki ≤ {n}',
-  'links.limit.total': 'łącznie ≤ {max}',
-  'links.usage': '{n} plików, {size}',
-  'links.usage_in_progress': '{n} w trakcie ({size} zarezerwowane)',
-  'links.revoke': 'Unieważnij',
-  'links.revoke_confirm': 'Unieważnić link „{label}”? Trwające uploady zostaną przerwane.',
-
-  'files.title': 'Pliki',
-  'files.empty': 'Brak plików.',
-  'files.col.name': 'Nazwa',
-  'files.col.recipient': 'Odbiorca (link)',
-  'files.col.size': 'Rozmiar',
-  'files.col.status': 'Status',
-  'files.col.uploaded': 'Przesłano',
-  'files.declared': '{size} (deklarowany)',
-  'files.download': 'Pobierz',
-  'files.delete': 'Usuń',
-  'files.delete_confirm': 'Usunąć plik „{name}”? Tej operacji nie da się cofnąć.',
-  'files.untrusted': 'Pliki są traktowane jako niezaufane: pobieranie odbywa się zawsze jako załącznik, nic nie jest renderowane ani wykonywane po stronie serwera. Skanowanie antywirusowe nie jest częścią tej wersji.',
-  'files.status.uploading': 'w trakcie',
-  'files.status.complete': 'ukończony',
-  'files.status.aborted': 'przerwany',
-  'files.status.expired': 'wygasły',
-  'files.status.missing': 'brak w storage',
-  'files.status.deleted': 'usunięty',
-
-  'audit.title': 'Dziennik zdarzeń (ostatnie {n})',
-  'audit.col.time': 'Czas',
-  'audit.col.actor': 'Aktor',
-  'audit.col.action': 'Zdarzenie',
-  'audit.col.case': 'Sprawa',
-  'audit.col.link': 'Link',
-  'audit.col.file': 'Plik',
-  'audit.col.ip': 'IP',
-  'audit.col.details': 'Szczegóły',
-
-  'upload.title': 'Upload: {case}',
-  'upload.link_for': 'Link dla:',
-  'upload.valid_until': 'ważny do {date}',
-  'upload.limit.file': 'Maksymalny rozmiar pliku:',
-  'upload.limit.files': 'Maksymalna liczba plików:',
-  'upload.limit.total': 'Łączny limit danych:',
-  'upload.used_n': '(użyto {n})',
-  'upload.used_size': '(użyto {size})',
-  'upload.send': 'Prześlij pliki',
-  'upload.drop_here': 'Przeciągnij pliki tutaj',
-  'upload.or': 'albo',
-  'upload.choose': 'wybierz z dysku',
-  'upload.resume_hint': 'Duże pliki są przesyłane w częściach i można je wznowić po utracie połączenia. Po odświeżeniu strony wskaż ten sam plik ponownie, a upload zostanie wznowiony od miejsca przerwania.',
-  'upload.your_files': 'Twoje pliki',
-  'upload.your_files_intro': 'Widzisz wyłącznie pliki przesłane tym linkiem. Pliki nie mogą być pobrane ani usunięte z tego miejsca – odbiera je administrator.',
-  'upload.col.name': 'Nazwa',
-  'upload.col.size': 'Rozmiar',
-  'upload.col.date': 'Data',
-  'upload.col.status': 'Status',
-  'upload.none_yet': 'Brak przesłanych plików.',
-  'upload.list_failed': 'Nie udało się pobrać listy: {msg}',
-  'upload.terminal': 'Upload z terminala',
-  'upload.terminal_hint': '(curl, skrypty, wznawiane transfery)',
-  'upload.terminal_intro': 'Zastąp {path} ścieżką do swojego pliku (może zawierać spacje). Kod wyjścia różny od zera oznacza błąd; odpowiedź to JSON.',
-  'upload.snippet.single': 'Jeden plik',
-  'upload.snippet.multi': 'Kilka plików',
-  'upload.snippet.env': 'Token w zmiennej środowiskowej (zalecane)',
-  'upload.snippet.list': 'Lista przesłanych plików',
-  'upload.snippet.resumable': 'Duży plik z wznawianiem (skrypt {script})',
-  'upload.history_warning': 'Uwaga: polecenie zawierające token trafia do historii powłoki (np. {file}). Wariant z export poprzedzony spacją nie jest zapisywany w historii, gdy ustawione jest {opt}. Traktuj ten link jak hasło i nie przekazuj go dalej.',
-  'upload.path_placeholder': '/ścieżka/do/pliku.pdf',
-  'upload.path_placeholder2': '/ścieżka/raport.pdf',
-  'upload.path_placeholder3': '/ścieżka/zdjęcie 1.jpg',
-  'upload.path_placeholder_big': '/ścieżka/do/dużego pliku.iso',
-  'upload.js.queued': 'w kolejce…',
-  'upload.js.too_large': 'za duży: limit {max}',
-  'upload.js.error': 'błąd: {msg}',
-  'upload.js.starting': 'rozpoczynanie…',
-  'upload.js.resuming': 'wznawianie poprzedniego uploadu…',
-  'upload.js.retrying': 'ponawianie…',
-  'upload.js.done': 'ukończony',
-  'upload.js.finalising': 'wysłano wszystkie dane, serwer kończy zapis…',
-  'upload.js.cancelled': 'anulowano',
-  'upload.js.cancelled_local': 'anulowano (lokalnie)',
-  'upload.js.status.uploading': 'w trakcie',
-  'upload.js.status.complete': 'ukończony',
-};
-
 export type MessageKey = keyof typeof en;
-const DICT: Record<Lang, Record<MessageKey, string>> = { en, pl };
+export type Messages = Record<MessageKey, string>;
+
+const DICT: Record<Lang, Messages> = {
+  bg, cs, da, de, el, en, es, et, fi, fr, ga, hr, hu, it, lt, lv, mt, nl, pl, pt, ro, sk, sl, sv,
+};
+export const LANGS = Object.keys(DICT) as Lang[];
+
+/** Each language's name in itself, for the switcher: a reader looks for the word they can read. */
+export const LANG_NAMES: Record<Lang, string> = {
+  bg: 'Български', cs: 'Čeština', da: 'Dansk', de: 'Deutsch', el: 'Ελληνικά', en: 'English',
+  es: 'Español', et: 'Eesti', fi: 'Suomi', fr: 'Français', ga: 'Gaeilge', hr: 'Hrvatski',
+  hu: 'Magyar', it: 'Italiano', lt: 'Lietuvių', lv: 'Latviešu', mt: 'Malti', nl: 'Nederlands',
+  pl: 'Polski', pt: 'Português', ro: 'Română', sk: 'Slovenčina', sl: 'Slovenščina', sv: 'Svenska',
+};
+
+/** The locale dates are formatted in. Plain `en` would mean US month/day order, so English uses en-GB. */
+export function dateLocale(lang: Lang): string {
+  return lang === 'en' ? 'en-GB' : lang;
+}
 
 export type Params = Record<string, string | number>;
 
@@ -519,13 +75,14 @@ export function translator(lang: Lang): Translator {
 }
 
 export function isLang(v: unknown): v is Lang {
-  return typeof v === 'string' && (LANGS as string[]).includes(v);
+  return typeof v === 'string' && Object.hasOwn(DICT, v);
 }
 
 /**
- * Picks the UI language from Accept-Language: Polish only when it is the browser's
- * top-ranked language; anything else (German, French, unknown…) gets English, which
- * such users are far more likely to read than a secondary Polish entry deep in their list.
+ * Picks the UI language from Accept-Language: the browser's top-ranked language when we
+ * have it, English otherwise. Lower-ranked entries are deliberately ignored — someone
+ * whose first language is Japanese and who lists German fourth is still more likely to
+ * read English than German. Regions collapse onto the language (de-AT → de, pt-BR → pt).
  */
 export function negotiateLang(acceptLanguage: string | undefined): Lang {
   if (!acceptLanguage) return DEFAULT_LANG;

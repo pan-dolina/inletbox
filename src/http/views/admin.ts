@@ -1,6 +1,6 @@
 import { formatSize } from '../../config.js';
 import type { Config } from '../../config.js';
-import { translator, type Lang, type Translator } from '../../i18n.js';
+import { dateLocale, translator, type Lang, type Translator } from '../../i18n.js';
 import type { AuditRow } from '../../services/audit.js';
 import type { Case, CaseSummary } from '../../services/cases.js';
 import type { AdminFileView } from '../../services/files.js';
@@ -24,7 +24,7 @@ export function adminNav(v: AdminViewContext): SafeHtml {
 export function fmtDate(iso: string | null | undefined, lang: Lang = 'en'): string {
   if (!iso) return '—';
   const d = new Date(iso);
-  return d.toLocaleString(lang === 'pl' ? 'pl-PL' : 'en-GB', { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC';
+  return d.toLocaleString(dateLocale(lang), { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC';
 }
 
 function flash(msg?: string, kind: 'error' | 'ok' = 'error'): SafeHtml {

@@ -17,8 +17,9 @@ no self-registration.
   `tus-js-client`). No native modules.
 - **Deployment:** one container + one volume; optional MinIO profile for S3 testing.
 - **Admin 2FA:** TOTP (RFC 6238) with recovery codes, optionally enforced for every admin.
-- **UI languages:** English and Polish. Polish is used when it is the browser's primary
-  language (`Accept-Language`), English in every other case; a footer switcher (EN | PL)
+- **UI languages:** the 24 official languages of the European Union. The page follows
+  the browser's primary language (`Accept-Language`) when it is one of them and falls
+  back to English otherwise; a footer menu lists every language by its own name and
   stores an explicit choice in a cookie. API error messages follow the same language.
 - **Light and dark theme:** follows the operating system / browser preference
   (`prefers-color-scheme`). No toggle, no script, no cookie — nothing to configure.
@@ -556,7 +557,8 @@ A single-process Express + SQLite monolith; storage is a plug-in.
 ```
 src/
   config.ts            environment variables → Config (parseSize, branding, …)
-  i18n.ts              en/pl dictionaries, Accept-Language negotiation, placeholders
+  i18n.ts              language list, Accept-Language negotiation, placeholders
+  locales/             one dictionary per language; en.ts defines the keys
   db.ts                node:sqlite, migrations from migrations/*.sql, transaction()
   crypto.ts            ids, tokens, sha256, scrypt
   totp.ts              RFC 6238 TOTP, base32, recovery codes
@@ -681,8 +683,11 @@ identical content). The same checks run in GitHub Actions on every push.
   large files a short-lived presigned `GET` scoped to one object could be added.
 - No notifications (e-mail/webhook) for new files; the natural hook is the
   `upload.complete` audit event.
-- Only English and Polish UI strings exist; adding a language means one more dictionary in
-  `src/i18n.ts` (the type system enforces that every key is translated).
+- English and Polish are maintained by people who read them. The other 22 dictionaries
+  were translated without review by a native speaker; corrections are welcome and are a
+  one-file change in `src/locales/`. Adding a language means one more dictionary there
+  plus an entry in `src/i18n.ts` — the types refuse a missing key, and
+  `test/i18n.test.ts` refuses a dropped `{placeholder}`.
 
 ---
 

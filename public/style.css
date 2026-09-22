@@ -226,6 +226,18 @@ table.audit td.details > span { display: inline-block; max-width: 24rem; white-s
 .qr svg { width: 200px; height: 200px; display: block; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
 .btn-link-muted { color: var(--muted); }
 .breakable { word-break: break-all; }
-.lang-switch a { color: var(--muted); }
-.lang-current { font-weight: 600; }
+/* Footer language menu: opens upwards, since the footer is the bottom of the page. */
+.lang-switch { display: inline-block; position: relative; }
+.lang-switch > summary { cursor: pointer; }
+.lang-switch > ul {
+  position: absolute; bottom: calc(100% + .5rem); left: 50%; transform: translateX(-50%); z-index: 10;
+  margin: 0; padding: .6rem .8rem; list-style: none; text-align: left; font-size: .85rem;
+  display: grid; grid-template-columns: repeat(3, max-content); gap: .2rem 1.2rem;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .18);
+}
+@media (max-width: 480px) { .lang-switch > ul { grid-template-columns: repeat(2, max-content); } }
+.lang-switch a { color: var(--muted); text-decoration: none; }
+.lang-switch a:hover, .lang-switch a:focus-visible { color: var(--text); text-decoration: underline; }
+.lang-current { font-weight: 600; color: var(--text); }
 .version { white-space: nowrap; }

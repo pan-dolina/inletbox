@@ -5,7 +5,7 @@
  * becoming XSS in the admin panel and the upload page.
  */
 import type { Brand } from '../config.js';
-import { LANGS, t, type Lang } from '../i18n.js';
+import { LANG_NAMES, LANGS, t, type Lang } from '../i18n.js';
 
 export class SafeHtml {
   constructor(public readonly value: string) {}
@@ -78,9 +78,11 @@ export function layout(opts: LayoutOptions): string {
   const b = currentBrand;
   const footer = b.footerText || `${b.name} · ${t(opts.lang, 'app.tagline')}`;
   const next = opts.path && opts.path.startsWith('/') && !opts.path.startsWith('//') ? opts.path : '/';
+  // Twenty-four languages do not fit in a footer line, so the switcher is a <details>
+  // menu: it opens without JavaScript, which keeps the CSP as strict as it is.
   const switcher = LANGS.map((l) => l === opts.lang
-    ? html`<span class="lang-current" lang="${l}">${l.toUpperCase()}</span>`
-    : html`<a href="/lang/${l}?next=${encodeURIComponent(next)}" hreflang="${l}" lang="${l}">${l.toUpperCase()}</a>`);
+    ? html`<li><span class="lang-current" lang="${l}" aria-current="true">${LANG_NAMES[l]}</span></li>`
+    : html`<li><a href="/lang/${l}?next=${encodeURIComponent(next)}" hreflang="${l}" lang="${l}">${LANG_NAMES[l]}</a></li>`);
   return html`<!doctype html>
 <html lang="${opts.lang}">
 <head>
@@ -108,7 +110,7 @@ ${b.logoPath ? html`<link rel="icon" href="/brand/logo">` : ''}
 <main class="container">
 ${opts.body}
 </main>
-<footer class="footer">${footer} · <span class="version">v${appVersion}</span> · <span class="lang-switch" aria-label="${t(opts.lang, 'common.language')}">${switcher.map((s, i) => i ? html` | ${s}` : s)}</span></footer>
+<footer class="footer">${footer} · <span class="version">v${appVersion}</span> · <details class="lang-switch"><summary aria-label="${t(opts.lang, 'common.language')}: ${LANG_NAMES[opts.lang]}">${opts.lang.toUpperCase()} · ${LANG_NAMES[opts.lang]}</summary><ul>${switcher}</ul></details></footer>
 ${(opts.scripts ?? []).map((s) => html`<script src="${asset(s)}" defer></script>`)}
 </body>
 </html>`.value;

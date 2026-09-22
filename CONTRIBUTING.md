@@ -84,9 +84,15 @@ Every view goes through the `html` tagged template in `src/http/html.ts`, which 
 interpolations. Never build markup by concatenation — client-supplied file names, labels
 and case names reach the admin panel.
 
-Every i18n key must exist in both the `en` and `pl` dictionaries in `src/i18n.ts`; the
-types enforce it. Strings shown by the browser upload script also have to be listed in
-`clientMessages()`, or they render as the raw key.
+Every i18n key must exist in all 24 dictionaries in `src/locales/`; `en.ts` defines the
+keys and the types refuse a dictionary that lacks one. A new string therefore needs a
+translation in every language — if you cannot write one, say so in the pull request
+rather than pasting the English in, which `test/i18n.test.ts` notices. Strings shown by
+the browser upload script also have to be listed in `clientMessages()`, or they render
+as the raw key.
+
+Translations other than English and Polish have not been reviewed by native speakers. A
+pull request that fixes wording in one of them is welcome on its own.
 
 ## Commits and pull requests
 

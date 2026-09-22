@@ -1,6 +1,6 @@
 {
   "name": "inletbox",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Self-hosted private file drop box: admins create cases and upload links, external parties upload files they cannot read back.",
   "license": "Apache-2.0",
