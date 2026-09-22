@@ -7,7 +7,8 @@ changes for an operator or a link holder, not which files moved. The format foll
 
 The section for a version is what ends up in its
 [GitHub Release](https://github.com/pan-dolina/inletbox/releases): `.github/workflows/release.yml`
-reads it from this file and refuses to publish a tag that has no section here.
+reads it from this file, refuses to publish a tag that has no section here, and rewrites
+a published release's notes whenever its section changes on `main`.
 
 ## [0.3.0] - 2026-09-22
 

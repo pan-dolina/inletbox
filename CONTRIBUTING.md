@@ -109,3 +109,7 @@ pull request that fixes wording in one of them is welcome on its own.
 Maintainers only: add the version's section to `CHANGELOG.md`, bump `version` in
 `package.json`, commit, then push an annotated `vX.Y.Z` tag. The Release workflow turns
 the tag into a GitHub Release using that changelog section.
+
+Fixing a published release's notes means fixing `CHANGELOG.md` on `main`: the same
+workflow rewrites the notes of every existing release whose section changed.
+`.github/scripts/release-notes.sh vX.Y.Z` prints what a release will say, locally.

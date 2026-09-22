@@ -1,21 +1,31 @@
 name: Release
 
-# Turns a pushed vX.Y.Z tag into a GitHub Release whose notes come from CHANGELOG.md.
+# GitHub Releases whose notes come from CHANGELOG.md, kept in step with it.
+#
+# - Pushing a vX.Y.Z tag publishes its release. A tag without a changelog section fails
+#   the job rather than publishing an empty release.
+# - Pushing to main a change to CHANGELOG.md (or to how notes are built) rewrites the
+#   notes of every release that already exists, so correcting the changelog corrects
+#   the published releases — nobody has to remember to re-run anything.
+# - workflow_dispatch does the same for one tag by hand.
 #
 # Notes are NOT auto-generated. `--generate-notes` builds its list from merged pull
-# requests, and this repository commits straight to main, so it produced a release body
-# containing nothing but a compare link. CHANGELOG.md is the source of truth instead, and
-# a tag without a section there fails the job rather than publishing an empty release.
+# requests, and this repository commits straight to main, so it produced release bodies
+# containing nothing but a compare link.
 #
 # Nothing here needs a personal token: the runner's GITHUB_TOKEN is enough, which is the
-# point — releases should not depend on what is installed on someone's laptop.
-#
-# workflow_dispatch takes a tag name, to backfill older tags or to re-sync a release body
-# after CHANGELOG.md is corrected.
+# point — releases should not depend on what is installed on someone's laptop. The notes
+# themselves are built by .github/scripts/release-notes.sh, which also runs locally.
 
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+    branches: [main]
+    # Path filters only apply to the branch push; a tag push always runs.
+    paths:
+      - CHANGELOG.md
+      - .github/workflows/release.yml
+      - .github/scripts/release-notes.sh
   workflow_dispatch:
     inputs:
       tag:
@@ -26,9 +36,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Publish the GitHub Release
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write # creating or editing a release writes to the repository
@@ -37,48 +52,51 @@ jobs:
         with:
           fetch-depth: 0 # the previous tag is needed for the compare link
 
-      - name: Build the notes from CHANGELOG.md
-        env:
-          TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          set -euo pipefail
-          if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
-            echo "::error::tag ${TAG} does not exist"
-            exit 1
-          fi
-
-          # The section runs from "## [x.y.z]" to the next section or to the link
-          # definitions at the bottom of the file.
-          awk -v v="${TAG#v}" '
-            $0 ~ "^## \\[" v "\\]" { found = 1; next }
-            found && /^## \[/      { exit }
-            found && /^\[[^]]+\]: / { exit }
-            found                  { print }
-          ' CHANGELOG.md > notes.md
-
-          if [ -z "$(tr -d '[:space:]' < notes.md)" ]; then
-            echo "::error::CHANGELOG.md has no section for ${TAG#v} — add one before tagging"
-            exit 1
-          fi
-
-          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
-          if [ -n "${PREV}" ]; then
-            printf '\n**Full Changelog**: %s/%s/compare/%s...%s\n' \
-              "${GITHUB_SERVER_URL}" "${GITHUB_REPOSITORY}" "${PREV}" "${TAG}" >> notes.md
-          fi
-
-          echo "--- notes for ${TAG} ---"
-          cat notes.md
-
       - name: Publish (create, or re-sync an existing release)
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
+          if ! .github/scripts/release-notes.sh "${TAG}" > notes.md; then
+            echo "::error::no notes for ${TAG} — add its section to CHANGELOG.md before tagging"
+            exit 1
+          fi
+          echo "--- notes for ${TAG} ---"
+          cat notes.md
           if gh release view "${TAG}" >/dev/null 2>&1; then
-            echo "release ${TAG} exists, re-syncing its notes from CHANGELOG.md"
             gh release edit "${TAG}" --title "${TAG}" --notes-file notes.md
           else
             gh release create "${TAG}" --title "${TAG}" --notes-file notes.md --verify-tag
           fi
+
+  sync:
+    name: Re-sync published release notes
+    if: github.event_name == 'push' && github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Rewrite every release whose section changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Only releases that already exist are touched; creating one stays the job of
+          # a tag push, so a changelog section written ahead of tagging publishes nothing.
+          for tag in $(gh release list --limit 200 --json tagName --jq '.[].tagName'); do
+            if ! .github/scripts/release-notes.sh "${tag}" > notes.md; then
+              echo "::warning::${tag} has a release but no CHANGELOG.md section; left as it is"
+              continue
+            fi
+            if [ "$(gh release view "${tag}" --json body --jq .body)" = "$(cat notes.md)" ]; then
+              echo "${tag}: up to date"
+            else
+              gh release edit "${tag}" --notes-file notes.md
+              echo "${tag}: notes rewritten from CHANGELOG.md"
+            fi
+          done
