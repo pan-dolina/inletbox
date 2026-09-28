@@ -10,6 +10,17 @@ The section for a version is what ends up in its
 reads it from this file, refuses to publish a tag that has no section here, and rewrites
 a published release's notes whenever its section changes on `main`.
 
+## [0.3.1] - 2026-09-28
+
+### Fixed
+
+- The footer names the product next to its release: "inletbox v0.3.1" rather than a
+  bare "v0.3.1" after the operator's own footer text, which made the version read as
+  the brand's.
+- Without `BRAND_FOOTER_TEXT`, the footer used to show a hard-coded Polish tagline in
+  every language. It is now written in the page's language, and the instance name is
+  left out when it would only repeat "inletbox".
+
 ## [0.3.0] - 2026-09-22
 
 ### Added
@@ -120,6 +131,7 @@ First release.
   Docker Compose deployment.
 - Apache-2.0.
 
+[0.3.1]: https://github.com/pan-dolina/inletbox/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/pan-dolina/inletbox/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/pan-dolina/inletbox/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/pan-dolina/inletbox/compare/v0.1.0...v0.1.1
