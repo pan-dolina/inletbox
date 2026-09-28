@@ -76,7 +76,11 @@ export interface LayoutOptions {
 
 export function layout(opts: LayoutOptions): string {
   const b = currentBrand;
-  const footer = b.footerText || `${b.name} · ${t(opts.lang, 'app.tagline')}`;
+  // The operator's own line (BRAND_FOOTER_TEXT), or the instance name with the translated
+  // tagline. The release that follows always names the product: the version belongs to
+  // inletbox, not to whatever brand the instance carries.
+  const tagline = t(opts.lang, 'app.tagline');
+  const footer = b.footerText || (b.name === 'inletbox' ? tagline : `${b.name} · ${tagline}`);
   const next = opts.path && opts.path.startsWith('/') && !opts.path.startsWith('//') ? opts.path : '/';
   // Twenty-four languages do not fit in a footer line, so the switcher is a <details>
   // menu: it opens without JavaScript, which keeps the CSP as strict as it is.
@@ -110,7 +114,7 @@ ${b.logoPath ? html`<link rel="icon" href="/brand/logo">` : ''}
 <main class="container">
 ${opts.body}
 </main>
-<footer class="footer">${footer} · <span class="version">v${appVersion}</span> · <details class="lang-switch"><summary aria-label="${t(opts.lang, 'common.language')}: ${LANG_NAMES[opts.lang]}">${opts.lang.toUpperCase()} · ${LANG_NAMES[opts.lang]}</summary><ul>${switcher}</ul></details></footer>
+<footer class="footer">${footer} · <span class="version">inletbox v${appVersion}</span> · <details class="lang-switch"><summary aria-label="${t(opts.lang, 'common.language')}: ${LANG_NAMES[opts.lang]}">${opts.lang.toUpperCase()} · ${LANG_NAMES[opts.lang]}</summary><ul>${switcher}</ul></details></footer>
 ${(opts.scripts ?? []).map((s) => html`<script src="${asset(s)}" defer></script>`)}
 </body>
 </html>`.value;

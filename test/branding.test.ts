@@ -17,7 +17,9 @@ describe('branding configuration', () => {
     expect(cfg.brand.name).toBe('Acme Drop');
     expect(cfg.brand.colorPrimary).toBe('#0f766e');
     expect(cfg.brand.colorAccent).toBe('#0f766e'); // defaults to primary
-    expect(cfg.brand.footerText).toContain('Acme Drop');
+    // No default footer text in config: it used to be a hard-coded Polish line shown in
+    // every language. The page now composes "<name> · <tagline>" per language instead.
+    expect(cfg.brand.footerText).toBe('');
     expect(loadConfig({}).brand).toMatchObject({ name: 'inletbox', logoPath: null, colorPrimary: '#1f6feb', colorTopbar: '#101418' });
   });
 });
@@ -44,7 +46,8 @@ describe('branded instance', () => {
       expect(html).not.toContain('Acme <Drop>');
       expect(html).toContain('<img class="brand-logo" src="/brand/logo" alt="Acme &lt;Drop&gt;">');
       expect(html).toContain('<link rel="stylesheet" href="/brand/theme.css">');
-      expect(html).toContain('Acme &amp; Co');
+      // The operator's line, then the product and its release — never the brand's version.
+      expect(html).toContain('<footer class="footer">Acme &amp; Co · <span class="version">inletbox v');
       expect(html).not.toMatch(/<script[^>]+src="https?:\/\//);
     }
   });

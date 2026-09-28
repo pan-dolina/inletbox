@@ -113,7 +113,7 @@ export function loadBrand(env: NodeJS.ProcessEnv): Brand {
     colorPrimary,
     colorTopbar: color(env, 'BRAND_COLOR_TOPBAR', '#101418'),
     colorAccent: color(env, 'BRAND_COLOR_ACCENT', colorPrimary),
-    footerText: (env.BRAND_FOOTER_TEXT ?? '').trim().slice(0, 200) || `${name} · prywatna skrzynka wrzutowa`,
+    footerText: (env.BRAND_FOOTER_TEXT ?? '').trim().slice(0, 200),
   };
 }
 

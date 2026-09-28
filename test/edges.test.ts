@@ -421,10 +421,17 @@ describe('release version in the footer', () => {
     const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
     const l = app.mkLink(app.mkCase().id);
     for (const url of [`${app.base}/`, `${app.base}/admin/login`, `${app.base}/u/${l.token}`]) {
-      expect(await (await fetch(url)).text()).toContain(`<span class="version">v${pkg.version}</span>`);
+      expect(await (await fetch(url)).text()).toContain(`<span class="version">inletbox v${pkg.version}</span>`);
     }
     // A stale hard-coded string is the failure mode this guards against.
     expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('writes the unbranded footer in the page language, without repeating the product name', async () => {
+    const en = await (await fetch(`${app.base}/`)).text();
+    expect(en).toContain('<footer class="footer">private file drop box · <span class="version">inletbox v');
+    const pl = await (await fetch(`${app.base}/`, { headers: { 'accept-language': 'pl' } })).text();
+    expect(pl).toContain('<footer class="footer">prywatna skrzynka wrzutowa · <span class="version">inletbox v');
   });
 });
 
