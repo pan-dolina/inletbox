@@ -18,7 +18,7 @@ export function newCsrfToken(): string {
   return randomBytes(24).toString('base64url');
 }
 
-const TEMP_PASSWORD_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no 0/o, 1/l/i: it is read off a screen and typed
+const READABLE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no 0/o, 1/l/i: it is read off a screen and typed
 
 /**
  * A password an administrator hands to someone, who must replace it at their
@@ -29,7 +29,7 @@ export function newTempPassword(): string {
   while (chars.length < 20) {
     for (const b of randomBytes(32)) {
       // Rejection sampling keeps every character equally likely (248 = 8 * 31).
-      if (b < 248 && chars.length < 20) chars.push(TEMP_PASSWORD_ALPHABET[b % 31]!);
+      if (b < 248 && chars.length < 20) chars.push(READABLE_ALPHABET[b % 31]!);
     }
   }
   return chars.join('').replace(/(.{5})(?!$)/g, '$1-');
