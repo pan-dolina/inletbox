@@ -1,6 +1,7 @@
 import type { Db } from '../db.js';
 import { now } from '../db.js';
 import { newId } from '../crypto.js';
+import type { Viewer } from './users.js';
 
 export interface Case {
   id: string; name: string; description: string; status: 'open' | 'closed'; created_at: string; updated_at: string;
@@ -20,14 +21,16 @@ export function getCase(db: Db, id: string): Case | null {
   return (db.prepare('SELECT * FROM cases WHERE id = ?').get(id) as Case | undefined) ?? null;
 }
 
-export function listCases(db: Db): CaseSummary[] {
+/** Every case for an administrator; only the assigned ones for a user. */
+export function listCases(db: Db, viewer: Viewer): CaseSummary[] {
+  const assigned = viewer.role === 'admin' ? '' : 'WHERE EXISTS (SELECT 1 FROM case_members m WHERE m.case_id = c.id AND m.admin_id = ?)';
   return db.prepare(
     `SELECT c.*,
        (SELECT COUNT(*) FROM links l WHERE l.case_id = c.id AND l.revoked_at IS NULL) AS link_count,
        (SELECT COUNT(*) FROM files f WHERE f.case_id = c.id AND f.status = 'complete') AS file_count,
        (SELECT COALESCE(SUM(size), 0) FROM files f WHERE f.case_id = c.id AND f.status = 'complete') AS total_bytes
-     FROM cases c ORDER BY c.status = 'open' DESC, c.created_at DESC`,
-  ).all() as unknown as CaseSummary[];
+     FROM cases c ${assigned} ORDER BY c.status = 'open' DESC, c.created_at DESC`,
+  ).all(...(assigned ? [viewer.id] : [])) as unknown as CaseSummary[];
 }
 
 export function updateCase(db: Db, id: string, input: { name?: string; description?: string; status?: 'open' | 'closed' }): Case | null {

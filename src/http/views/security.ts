@@ -31,6 +31,8 @@ export interface SecurityPageData {
   totpRequired: boolean;
   issuer: string;
   recoveryLeft: number;
+  /** The password was issued by an administrator and has to be replaced before anything else. */
+  mustChangePassword?: boolean;
   /** Enrolment in progress: QR (SVG markup produced by the qrcode library) + secret for manual entry. */
   enrol?: { qrSvg: string; secret: string; uri: string };
   /** Freshly generated recovery codes, shown once. */
@@ -50,6 +52,7 @@ export function securityPage(d: SecurityPageData): string {
         <h1>${t('security.title', { user: d.username })}</h1>
         ${d.error ? html`<div class="flash flash-error">${d.error}</div>` : ''}
         ${d.ok ? html`<div class="flash flash-ok">${d.ok}</div>` : ''}
+        ${d.mustChangePassword ? html`<div class="warning">${t('security.must_change_notice')}</div>` : ''}
         ${d.totpRequired && !d.totpEnabled ? html`<div class="warning">${t('security.required_notice')}</div>` : ''}
         <p>${raw(t('security.status', { state: `<strong>${d.totpEnabled ? t('security.enabled') : t('security.disabled')}</strong>` }))}
         ${d.totpEnabled ? raw(t('security.recovery_left', { n: `<strong>${d.recoveryLeft}</strong>` })) : ''}</p>

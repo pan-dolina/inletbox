@@ -16,7 +16,10 @@ no self-registration.
   disk or S3/MinIO storage, resumable uploads via the **tus** protocol (`@tus/server` +
   `tus-js-client`). No native modules.
 - **Deployment:** one container + one volume; optional MinIO profile for S3 testing.
-- **Admin 2FA:** TOTP (RFC 6238) with recovery codes, optionally enforced for every admin.
+- **Accounts and roles:** administrators see every case and manage accounts; users see
+  only the cases they are assigned to. Accounts are created in the panel with a one-time
+  password that has to be replaced at the first sign-in.
+- **2FA:** TOTP (RFC 6238) with recovery codes, optionally enforced for every account.
 - **UI languages:** the 24 official languages of the European Union. The page follows
   the browser's primary language (`Accept-Language`) when it is one of them and falls
   back to English otherwise; a footer menu lists every language by its own name and
@@ -59,7 +62,7 @@ docker compose up -d --build
 docker compose exec app node dist/cli.js create-admin admin      # password prompted interactively, min. 12 characters
 ```
 
-After the first login enable two-factor authentication in the panel (**Security**) or enforce it for every administrator with `ADMIN_REQUIRE_TOTP=true`.
+After the first login enable two-factor authentication in the panel (**Security**) or enforce it for every account with `ADMIN_REQUIRE_TOTP=true`. Everyone else gets an account from that administrator under **Users** (§2) — the CLI is only needed for the first one.
 
 Panel: `PUBLIC_URL/admin`. Data (the SQLite database and, with the local backend, the
 files) lives on the `inletbox-data` volume mounted at `/data`.
@@ -94,8 +97,25 @@ docker compose up -d --build app
 
 | Who | Can | Cannot |
 |---|---|---|
-| **Administrator** (cookie session, optional TOTP) | create/edit/close cases; generate and revoke links, set their expiry and limits; inspect metadata; download and delete files; read the audit log | — |
+| **Administrator** (cookie session, optional TOTP) | everything a user can, in **every** case; create, disable and delete accounts, change roles, issue new passwords, remove a lost second factor; assign users to cases; read the audit log | change their own role, disable or delete themselves |
+| **User** (cookie session, optional TOTP) | in the cases they are **assigned** to: edit/close cases; generate and revoke links, set their expiry and limits; inspect metadata; download and delete files. Create new cases (and are assigned to them) | see or open any other case — it answers `404`, exactly like one that does not exist; manage accounts or assignments; read the audit log |
 | **Link holder** (token) | upload files (browser, curl, tus); see the list and status of files uploaded through **that** link | download or preview any file, including their own; delete or overwrite completed files; see files of other links; reach the admin panel |
+
+### Accounts and roles
+
+Every account that existed before 0.5.0 is an administrator. An administrator creates
+further accounts under **Users** and picks a role; the application generates a temporary
+password (20 characters, shown once) that its owner must replace before they can do
+anything else. Assigning someone to a case happens on the case page, under
+**Assigned users**; administrators are never listed there, because they see every case.
+The access rule lives in one function (`canAccessCase` in `src/services/users.ts`) and is
+checked on every route that takes a case, link, file or upload id, including tus.
+Role changes, unassignments and disabling take effect on the account's next request, not
+at its next login. The instance always keeps at least one active administrator, and no
+one can change their own account from the list — their password and 2FA are on
+**Security**. `ADMIN_REQUIRE_TOTP` applies to every account, whatever its role.
+
+### Link holders
 
 **One case = many links. Each link = one recipient and one visibility scope.**
 The application cannot tell apart people who use the same link: whoever knows the link has
@@ -564,7 +584,7 @@ src/
   totp.ts              RFC 6238 TOTP, base32, recovery codes
   log.ts               JSON logging + redaction
   storage/             types (interface), local, s3, limit (byte counter + hash)
-  services/            auth (admins, sessions, TOTP), cases, links, files (reservations), audit, cleanup
+  services/            auth (accounts, sessions, TOTP), users (roles, case assignments), cases, links, files (reservations), audit, cleanup
   http/
     app.ts             application assembly, static assets, /lang/:lang switcher, 404/500
     brand.ts           /brand/logo, /brand/theme.css
@@ -581,8 +601,10 @@ scripts/inletbox-upload.sh   resumable upload from the CLI
 
 Tables ([`migrations/`](migrations/)):
 
-- `admins` (id, username, password_hash, totp_secret, totp_enabled_at, totp_last_step,
-  totp_failed_count, totp_locked_until)
+- `admins` — every panel account, whatever its role (id, username, password_hash,
+  role admin|user, disabled_at, must_change_password, last_login_at, totp_secret,
+  totp_enabled_at, totp_last_step, totp_failed_count, totp_locked_until)
+- `case_members` (case_id, admin_id) — which user may work on which case
 - `admin_recovery_codes` (admin_id, code_hash, used_at)
 - `sessions` (id_hash, admin_id, csrf_token, expires_at, totp_verified, totp_attempts)
 - `cases` (id, name, description, status open|closed)
@@ -678,7 +700,8 @@ identical content). The same checks run in GitHub Actions on every push.
   objects limit this to a sample or run it less often.
 - Resuming in the browser after a reload requires picking the file again (a browser
   limitation), and the tus-js-client fingerprint depends on name/size/mtime.
-- One administrator role; no SSO/WebAuthn (TOTP is available), no permission levels.
+- Two roles and per-case assignment; no finer permissions inside a case (e.g. read-only),
+  no SSO/WebAuthn (TOTP is available).
 - Presigned URLs are not used (downloads always go through the application). For very
   large files a short-lived presigned `GET` scoped to one object could be added.
 - No notifications (e-mail/webhook) for new files; the natural hook is the

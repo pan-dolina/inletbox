@@ -18,6 +18,23 @@ export function newCsrfToken(): string {
   return randomBytes(24).toString('base64url');
 }
 
+const TEMP_PASSWORD_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no 0/o, 1/l/i: it is read off a screen and typed
+
+/**
+ * A password an administrator hands to someone, who must replace it at their
+ * first sign-in: 20 characters in groups of five (~99 bits), easy to read aloud.
+ */
+export function newTempPassword(): string {
+  const chars: string[] = [];
+  while (chars.length < 20) {
+    for (const b of randomBytes(32)) {
+      // Rejection sampling keeps every character equally likely (248 = 8 * 31).
+      if (b < 248 && chars.length < 20) chars.push(TEMP_PASSWORD_ALPHABET[b % 31]!);
+    }
+  }
+  return chars.join('').replace(/(.{5})(?!$)/g, '$1-');
+}
+
 /** Tokens are high-entropy, so an unsalted SHA-256 is sufficient and allows lookup by hash. */
 export function sha256Hex(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');

@@ -2,19 +2,22 @@ import { formatSize } from '../../config.js';
 import type { Config } from '../../config.js';
 import { dateLocale, translator, type Lang, type Translator } from '../../i18n.js';
 import type { AuditRow } from '../../services/audit.js';
+import type { Role } from '../../services/auth.js';
+import type { CaseMember, UserSummary } from '../../services/users.js';
 import type { Case, CaseSummary } from '../../services/cases.js';
 import type { AdminFileView } from '../../services/files.js';
 import type { Link, LinkUsage } from '../../services/links.js';
 import { linkState } from '../../services/links.js';
 import { html, layout, raw, type SafeHtml } from '../html.js';
 
-export interface AdminViewContext { lang: Lang; csrfToken: string; username: string; path: string }
+export interface AdminViewContext { lang: Lang; csrfToken: string; username: string; path: string; role: Role; userId: string }
 
 export function adminNav(v: AdminViewContext): SafeHtml {
   const t = translator(v.lang);
   return html`<nav class="nav">
     <a href="/admin">${t('nav.cases')}</a>
-    <a href="/admin/audit">${t('nav.audit')}</a>
+    ${v.role === 'admin' ? html`<a href="/admin/users">${t('nav.users')}</a>
+    <a href="/admin/audit">${t('nav.audit')}</a>` : ''}
     <a href="/admin/security">${t('nav.security')}</a>
     <span class="muted">${v.username}</span>
     <form method="post" action="/admin/logout" class="inline"><input type="hidden" name="_csrf" value="${v.csrfToken}"><button class="btn btn-link" type="submit">${t('nav.logout')}</button></form>
@@ -73,7 +76,7 @@ export function casesPage(v: AdminViewContext, cases: CaseSummary[], opts: { err
       </section>
       <section class="card">
         <h1>${t('cases.list')}</h1>
-        ${cases.length === 0 ? html`<p class="muted">${t('cases.empty')}</p>` : html`
+        ${cases.length === 0 ? html`<p class="muted">${t(v.role === 'admin' ? 'cases.empty' : 'cases.empty_assigned')}</p>` : html`
         <table>
           <thead><tr><th>${t('cases.col.name')}</th><th>${t('cases.col.status')}</th><th>${t('cases.col.links')}</th><th>${t('cases.col.files')}</th><th>${t('cases.col.size')}</th><th>${t('cases.col.created')}</th></tr></thead>
           <tbody>
@@ -93,6 +96,9 @@ export interface CasePageData {
   links: Array<Link & LinkUsage>;
   files: AdminFileView[];
   cfg: Config;
+  /** People assigned to the case, and (for an administrator) who else could be. */
+  members: CaseMember[];
+  assignable: CaseMember[];
   newLink?: { label: string; url: string };
   error?: string;
   ok?: string;
@@ -188,6 +194,105 @@ export function casePage(v: AdminViewContext, d: CasePageData): string {
           </tr>`)}</tbody>
         </table>`}
         <p class="muted small">${t('files.untrusted')}</p>
+      </section>
+
+      ${membersSection(v, d)}`,
+  });
+}
+
+/**
+ * Who works on the case. Everyone who can open the case sees the list; only an
+ * administrator assigns and unassigns, and administrators are never listed —
+ * they see every case anyway.
+ */
+function membersSection(v: AdminViewContext, d: CasePageData): SafeHtml {
+  const t = translator(v.lang);
+  const csrf = html`<input type="hidden" name="_csrf" value="${v.csrfToken}">`;
+  const admin = v.role === 'admin';
+  return html`<section class="card">
+    <h2>${t('members.title')}</h2>
+    <p class="muted small">${t('members.intro')}</p>
+    ${d.members.length === 0 ? html`<p class="muted">${t('members.empty')}</p>` : html`<ul class="members">${d.members.map((m) => html`<li>
+      <span>${m.username}</span>
+      ${m.disabled_at ? html`<span class="badge badge-disabled">${t('users.status.disabled')}</span>` : ''}
+      ${admin ? html`<form method="post" action="/admin/cases/${d.case.id}/members/${m.id}/remove" class="inline" data-confirm="${t('members.remove_confirm', { username: m.username })}">${csrf}<button class="btn" type="submit">${t('members.remove')}</button></form>` : ''}
+    </li>`)}</ul>`}
+    ${admin ? (d.assignable.length ? html`<form method="post" action="/admin/cases/${d.case.id}/members" class="row">${csrf}
+      <label class="grow">${t('members.user')} <select name="user_id" required>
+        ${d.assignable.map((u) => html`<option value="${u.id}">${u.username}</option>`)}
+      </select></label>
+      <button class="btn btn-primary" type="submit">${t('members.add')}</button>
+    </form>` : html`<p class="muted small">${raw(t('members.none_assignable', { link: '<a href="/admin/users">' + t('nav.users') + '</a>' }))}</p>`) : ''}
+  </section>`;
+}
+
+export interface UsersPageData {
+  users: UserSummary[];
+  /** A password just issued, shown this once. */
+  issued?: { username: string; password: string; reset: boolean };
+  error?: string;
+  ok?: string;
+}
+
+function userStatus(t: Translator, u: UserSummary): SafeHtml {
+  if (u.disabled_at) return html`<span class="badge badge-disabled">${t('users.status.disabled')}</span>`;
+  if (u.must_change_password) return html`<span class="badge badge-pending">${t('users.status.must_change')}</span>`;
+  return html`<span class="badge badge-active">${t('users.status.active')}</span>`;
+}
+
+export function usersPage(v: AdminViewContext, d: UsersPageData): string {
+  const t = translator(v.lang);
+  const csrf = html`<input type="hidden" name="_csrf" value="${v.csrfToken}">`;
+  const action = (u: UserSummary, path: string, label: string, opts: { danger?: boolean; confirm?: string; field?: [string, string] } = {}) => html`<form method="post" action="/admin/users/${u.id}/${path}" class="inline"${opts.confirm ? html` data-confirm="${opts.confirm}"` : ''}>${csrf}${opts.field ? html`<input type="hidden" name="${opts.field[0]}" value="${opts.field[1]}">` : ''}<button class="btn${opts.danger ? ' btn-danger' : ''}" type="submit">${label}</button></form>`;
+  return layout({
+    lang: v.lang, title: t('nav.users'), nav: adminNav(v), path: v.path,
+    scripts: ['/static/admin.js'],
+    body: html`
+      <section class="card">
+        <h1>${t('users.new')}</h1>
+        ${flash(d.error)}${flash(d.ok, 'ok')}
+        <form method="post" action="/admin/users" class="row">${csrf}
+          <label class="grow">${t('users.username')} <input name="username" required maxlength="64" autocomplete="off" spellcheck="false" placeholder="${t('users.username_placeholder')}"></label>
+          <label>${t('users.role')} <select name="role">
+            <option value="user" selected>${t('users.role.user')}</option>
+            <option value="admin">${t('users.role.admin')}</option>
+          </select></label>
+          <button class="btn btn-primary" type="submit">${t('common.create')}</button>
+        </form>
+        <p class="muted small">${t('users.roles_hint')}</p>
+      </section>
+
+      ${d.issued ? html`<section class="card highlight">
+        <h2>${t(d.issued.reset ? 'users.issued.reset_title' : 'users.issued.title', { username: d.issued.username })}</h2>
+        <p><strong>${t('users.issued.copy_now')}</strong> ${t('users.issued.intro')}</p>
+        <div class="copy-row"><input class="mono" readonly value="${d.issued.password}" data-copy-source><button class="btn" type="button" data-copy>${t('common.copy')}</button></div>
+      </section>` : ''}
+
+      <section class="card">
+        <h1>${t('users.list')}</h1>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>${t('users.col.username')}</th><th>${t('users.role')}</th><th>${t('users.col.status')}</th><th>${t('users.col.totp')}</th><th>${t('users.col.cases')}</th><th>${t('users.col.last_login')}</th><th></th></tr></thead>
+          <tbody>${d.users.map((u) => {
+            const self = u.id === v.userId;
+            return html`<tr>
+              <td>${u.username}${self ? html` <span class="muted small">(${t('users.you')})</span>` : ''}</td>
+              <td><span class="badge badge-role-${u.role}">${t(u.role === 'admin' ? 'users.role.admin' : 'users.role.user')}</span></td>
+              <td>${userStatus(t, u)}</td>
+              <td>${t(u.totp_enabled ? 'security.enabled' : 'security.disabled')}</td>
+              <td>${u.role === 'admin' ? html`<span class="muted">${t('users.all_cases')}</span>` : u.case_count}</td>
+              <td>${fmtDate(u.last_login_at, v.lang)}</td>
+              <td><div class="actions">${self ? html`<a href="/admin/security">${t('nav.security')}</a>` : html`
+                ${action(u, 'role', t(u.role === 'admin' ? 'users.make_user' : 'users.make_admin'), { field: ['role', u.role === 'admin' ? 'user' : 'admin'], confirm: t('users.role_confirm', { username: u.username }) })}
+                ${action(u, 'password', t('users.reset_password'), { confirm: t('users.reset_password_confirm', { username: u.username }) })}
+                ${u.totp_enabled ? action(u, 'totp', t('users.reset_totp'), { confirm: t('users.reset_totp_confirm', { username: u.username }) }) : ''}
+                ${u.disabled_at ? action(u, 'enable', t('users.enable')) : action(u, 'disable', t('users.disable'), { confirm: t('users.disable_confirm', { username: u.username }) })}
+                ${action(u, 'delete', t('users.delete'), { danger: true, confirm: t('users.delete_confirm', { username: u.username }) })}`}
+              </div></td>
+            </tr>`;
+          })}</tbody>
+        </table>
+        </div>
       </section>`,
   });
 }
@@ -205,7 +310,7 @@ export function auditPage(v: AdminViewContext, rows: AuditRow[]): string {
       <table class="small audit">
         <thead><tr><th>${t('audit.col.time')}</th><th>${t('audit.col.actor')}</th><th>${t('audit.col.action')}</th><th>${t('audit.col.case')}</th><th>${t('audit.col.link')}</th><th>${t('audit.col.file')}</th><th>${t('audit.col.ip')}</th><th>${t('audit.col.details')}</th></tr></thead>
         <tbody>${rows.map((r) => html`<tr>
-          <td class="nowrap">${fmtDate(r.ts, v.lang)}</td><td class="id">${r.actor_type}:${r.actor_id ?? '-'}</td><td>${r.action}</td>
+          <td class="nowrap">${fmtDate(r.ts, v.lang)}</td><td class="id">${r.actor_name ? html`${r.actor_name}<br><span class="muted">${r.actor_id}</span>` : html`${r.actor_type}:${r.actor_id ?? '-'}`}</td><td>${r.action}</td>
           <td class="mono id">${r.case_id ? html`<a href="/admin/cases/${r.case_id}">${r.case_id}</a>` : ''}</td>
           <td class="mono id">${r.link_id ?? ''}</td><td class="mono id">${r.file_id ?? ''}</td><td class="nowrap">${r.ip ?? ''}</td>
           <td class="mono details">${r.details ? html`<span>${r.details}</span>` : ''}</td>

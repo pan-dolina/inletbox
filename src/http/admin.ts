@@ -1,4 +1,4 @@
-import { Router, urlencoded, type Request, type Response } from 'express';
+import { Router, urlencoded, type NextFunction, type Request, type Response } from 'express';
 import { create as contentDisposition } from 'content-disposition';
 import QRCode from 'qrcode';
 import { pipeline } from 'node:stream/promises';
@@ -8,9 +8,13 @@ import { log } from '../log.js';
 import { audit, listAudit } from '../services/audit.js';
 import {
   authenticate, beginTotpEnrolment, changeAdminPassword, confirmTotpEnrolment, createSession, destroyOtherSessions, destroySession,
-  disableTotp, MAX_TOTP_ATTEMPTS, pendingTotpSecret, regenerateRecoveryCodes, remainingRecoveryCodes, totpLockedUntil, verifySessionTotp,
+  disableTotp, MAX_TOTP_ATTEMPTS, pendingTotpSecret, recordLogin, regenerateRecoveryCodes, remainingRecoveryCodes, totpLockedUntil, verifySessionTotp,
 } from '../services/auth.js';
-import { createCase, getCase, listCases, updateCase } from '../services/cases.js';
+import {
+  addCaseMember, assignableUsers, canAccessCase, caseMembers, createUser, deleteUser, getUser, isRole, listUsers, removeCaseMember,
+  resetUserPassword, resetUserTotp, setUserDisabled, setUserRole, UserError, type UserSummary,
+} from '../services/users.js';
+import { createCase, getCase, listCases, updateCase, type Case } from '../services/cases.js';
 import { discardUploadData } from '../services/cleanup.js';
 import { failUpload, getFile, listFilesForCase, listUploadingForLink, markDeleted } from '../services/files.js';
 import { createLink, getLink, listLinksForCase, revokeLink } from '../services/links.js';
@@ -20,11 +24,12 @@ import { t, type MessageKey } from '../i18n.js';
 import type { AppContext } from './context.js';
 import { SESSION_COOKIE } from './context.js';
 import { csrfProtect, loginLimiter, requireAdmin, sessionCookie } from './middleware.js';
-import { adminNav, auditPage, casePage, casesPage, errorPage, loginPage, type AdminViewContext } from './views/admin.js';
+import { adminNav, auditPage, casePage, casesPage, errorPage, usersPage, type UsersPageData, loginPage, type AdminViewContext } from './views/admin.js';
 import { securityPage, totpLoginPage, type SecurityPageData } from './views/security.js';
 
 function viewCtx(req: Request): AdminViewContext {
-  return { lang: req.lang, csrfToken: req.session!.csrfToken, username: req.session!.admin.username, path: req.originalUrl };
+  const { admin } = req.session!;
+  return { lang: req.lang, csrfToken: req.session!.csrfToken, username: admin.username, path: req.originalUrl, role: admin.role, userId: admin.id };
 }
 
 function sendError(req: Request, res: Response, titleKey: MessageKey, messageKey: MessageKey, status = 404): void {
@@ -40,6 +45,12 @@ function field(req: Request, name: string): string {
 function optionalSize(raw: string, name: string): number | null {
   const v = raw.trim();
   return v ? parseSize(v, name) : null;
+}
+
+/** A route parameter as a string; Express types it loosely once middleware sits in front of the handler. */
+function param(req: Request, name: string): string | undefined {
+  const v = req.params[name];
+  return typeof v === 'string' ? v : undefined;
 }
 
 function validId(id: string | undefined): string | null {
@@ -80,8 +91,9 @@ export function adminRouter(ctx: AppContext): Router {
       res.redirect(303, '/admin/totp');
       return;
     }
+    recordLogin(ctx.db, admin.id);
     audit(ctx.db, { actorType: 'admin', actorId: admin.id, action: 'admin.login', ip: req.ip });
-    res.redirect(303, ctx.cfg.adminRequireTotp ? '/admin/security' : '/admin');
+    res.redirect(303, (ctx.cfg.adminRequireTotp || admin.must_change_password) ? '/admin/security' : '/admin');
   });
 
   // Everything below needs at least a password-authenticated session and a CSRF token for state changes.
@@ -107,10 +119,11 @@ export function adminRouter(ctx: AppContext): Router {
     if (session.totpVerified) return res.redirect(303, '/admin');
     const result = verifySessionTotp(ctx.db, req.sessionId!, field(req, 'code'), ctx.cfg.sessionTtlMs);
     if (result.status === 'ok') {
+      recordLogin(ctx.db, session.admin.id);
       audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.login', ip: req.ip, details: { second_factor: true } });
       // Fresh session id for the privileged session.
       res.setHeader('Set-Cookie', sessionCookie(ctx, result.sessionId, Math.floor(ctx.cfg.sessionTtlMs / 1000)));
-      res.redirect(303, '/admin');
+      res.redirect(303, session.admin.must_change_password ? '/admin/security' : '/admin');
       return;
     }
     if (result.status === 'locked') {
@@ -140,6 +153,7 @@ export function adminRouter(ctx: AppContext): Router {
       lang: req.lang, csrfToken: session.csrfToken, username: session.admin.username, nav: adminNav(viewCtx(req)),
       totpEnabled: session.admin.totp_enabled, totpRequired: ctx.cfg.adminRequireTotp, issuer: ctx.cfg.brand.name,
       recoveryLeft: session.admin.totp_enabled ? remainingRecoveryCodes(ctx.db, session.admin.id) : 0,
+      mustChangePassword: session.admin.must_change_password,
       enrol, ...extra,
     }));
   }
@@ -163,6 +177,7 @@ export function adminRouter(ctx: AppContext): Router {
       return;
     }
     destroyOtherSessions(ctx.db, session.admin.id, req.sessionId!);
+    session.admin.must_change_password = false;
     audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.password_changed', ip: req.ip });
     renderSecurity(req, res, { ok: t(req.lang, 'security.password.changed') }).catch(next);
   });
@@ -217,46 +232,70 @@ export function adminRouter(ctx: AppContext): Router {
     renderSecurity(req, res, { ok: t(req.lang, 'security.msg.disabled') }).catch(next);
   });
 
-  // With ADMIN_REQUIRE_TOTP, admins without a second factor may only reach the security page.
+  // With ADMIN_REQUIRE_TOTP, accounts without a second factor may only reach the
+  // security page; so may an account still holding a password an administrator issued.
   r.use((req, res, next) => {
-    if (ctx.cfg.adminRequireTotp && !req.session!.admin.totp_enabled) {
+    const { admin } = req.session!;
+    const missing = admin.must_change_password ? 'Password change required' : ctx.cfg.adminRequireTotp && !admin.totp_enabled ? 'TOTP enrolment required' : null;
+    if (missing) {
       if (req.method === 'GET') return res.redirect(302, '/admin/security');
-      res.status(403).type('text/plain').send('TOTP enrolment required');
+      res.status(403).type('text/plain').send(missing);
       return;
     }
     next();
   });
 
+  /**
+   * The case, if this account may work on it. A case someone is not assigned to
+   * answers exactly like one that does not exist: its id reveals nothing.
+   */
+  function caseFor(req: Request, id: string | null | undefined): Case | null {
+    const c = id ? getCase(ctx.db, id) : null;
+    return c && canAccessCase(ctx.db, req.session!.admin, c.id) ? c : null;
+  }
+
+  /** Accounts, assignments and the audit log are the administrators' alone. */
+  const adminsOnly = (req: Request, res: Response, next: NextFunction): void => {
+    if (req.session!.admin.role === 'admin') return next();
+    sendError(req, res, 'error.forbidden.title', 'error.forbidden', 403);
+  };
+
   // ---- cases -------------------------------------------------------------
   r.get('/', (req, res) => {
-    res.type('html').send(casesPage(viewCtx(req), listCases(ctx.db)));
+    res.type('html').send(casesPage(viewCtx(req), listCases(ctx.db, req.session!.admin)));
   });
 
   r.post('/cases', (req, res) => {
     try {
       const c = createCase(ctx.db, { name: field(req, 'name'), description: field(req, 'description') });
+      // A user who opens a case works on it; an administrator sees it anyway.
+      if (req.session!.admin.role !== 'admin') addCaseMember(ctx.db, c.id, req.session!.admin.id);
       audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'case.create', caseId: c.id, ip: req.ip, details: { name: c.name } });
       res.redirect(303, `/admin/cases/${c.id}`);
     } catch (err) {
-      res.status(400).type('html').send(casesPage(viewCtx(req), listCases(ctx.db), { error: (err as Error).message }));
+      res.status(400).type('html').send(casesPage(viewCtx(req), listCases(ctx.db, req.session!.admin), { error: (err as Error).message }));
     }
   });
 
   function renderCase(req: Request, res: Response, caseId: string, extra: { error?: string; ok?: string; newLink?: { label: string; url: string } } = {}, status = 200): void {
-    const c = getCase(ctx.db, caseId);
+    const c = caseFor(req, caseId);
     if (!c) return sendError(req, res, 'error.not_found.title', 'error.case_missing');
-    res.status(status).type('html').send(casePage(viewCtx(req), { case: c, links: listLinksForCase(ctx.db, c.id), files: listFilesForCase(ctx.db, c.id), cfg: ctx.cfg, ...extra }));
+    res.status(status).type('html').send(casePage(viewCtx(req), {
+      case: c, links: listLinksForCase(ctx.db, c.id), files: listFilesForCase(ctx.db, c.id), cfg: ctx.cfg,
+      members: caseMembers(ctx.db, c.id), assignable: req.session!.admin.role === 'admin' ? assignableUsers(ctx.db, c.id) : [], ...extra,
+    }));
   }
 
   r.get('/cases/:id', (req, res) => {
-    const id = validId(req.params.id);
+    const id = validId(param(req, 'id'));
     if (!id) return renderCase(req, res, '');
     renderCase(req, res, id);
   });
 
   r.post('/cases/:id', (req, res) => {
-    const id = validId(req.params.id);
+    const id = validId(param(req, 'id'));
     if (!id) return renderCase(req, res, '');
+    if (!caseFor(req, id)) return renderCase(req, res, '');
     try {
       const c = updateCase(ctx.db, id, { name: field(req, 'name'), description: field(req, 'description') });
       if (!c) return renderCase(req, res, '');
@@ -268,8 +307,9 @@ export function adminRouter(ctx: AppContext): Router {
   });
 
   r.post('/cases/:id/status', (req, res) => {
-    const id = validId(req.params.id);
+    const id = validId(param(req, 'id'));
     if (!id) return renderCase(req, res, '');
+    if (!caseFor(req, id)) return renderCase(req, res, '');
     const status = field(req, 'status') === 'closed' ? 'closed' : 'open';
     const c = updateCase(ctx.db, id, { status });
     if (!c) return renderCase(req, res, '');
@@ -279,9 +319,9 @@ export function adminRouter(ctx: AppContext): Router {
 
   // ---- links -------------------------------------------------------------
   r.post('/cases/:id/links', (req, res) => {
-    const id = validId(req.params.id);
+    const id = validId(param(req, 'id'));
     if (!id) return renderCase(req, res, '');
-    const c = getCase(ctx.db, id);
+    const c = caseFor(req, id);
     if (!c) return renderCase(req, res, '');
     if (c.status !== 'open') return renderCase(req, res, id, { error: t(req.lang, 'case.closed_no_links') }, 400);
     try {
@@ -306,9 +346,9 @@ export function adminRouter(ctx: AppContext): Router {
   });
 
   r.post('/links/:id/revoke', async (req, res) => {
-    const id = validId(req.params.id);
+    const id = validId(param(req, 'id'));
     const link = id ? getLink(ctx.db, id) : null;
-    if (!link) return sendError(req, res, 'error.not_found.title', 'error.link_missing');
+    if (!link || !caseFor(req, link.case_id)) return sendError(req, res, 'error.not_found.title', 'error.link_missing');
     if (revokeLink(ctx.db, link.id)) {
       audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'link.revoke', caseId: link.case_id, linkId: link.id, ip: req.ip });
       // In-flight uploads on a revoked link are discarded immediately.
@@ -322,9 +362,9 @@ export function adminRouter(ctx: AppContext): Router {
 
   // ---- files -------------------------------------------------------------
   r.get('/files/:id/download', async (req, res) => {
-    const id = validId(req.params.id);
+    const id = validId(param(req, 'id'));
     const file = id ? getFile(ctx.db, id) : null;
-    if (!file || file.status !== 'complete') return sendError(req, res, 'error.not_found.title', 'error.file_missing');
+    if (!file || file.status !== 'complete' || !caseFor(req, file.case_id)) return sendError(req, res, 'error.not_found.title', 'error.file_missing');
     let stream;
     try {
       stream = await ctx.storage.get(file.id);
@@ -350,9 +390,9 @@ export function adminRouter(ctx: AppContext): Router {
   });
 
   r.post('/files/:id/delete', async (req, res) => {
-    const id = validId(req.params.id);
+    const id = validId(param(req, 'id'));
     const file = id ? getFile(ctx.db, id) : null;
-    if (!file) return sendError(req, res, 'error.not_found.title', 'error.file_not_exist');
+    if (!file || !caseFor(req, file.case_id)) return sendError(req, res, 'error.not_found.title', 'error.file_not_exist');
     if (markDeleted(ctx.db, file.id)) {
       await ctx.storage.delete(file.id);
       audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'file.delete', caseId: file.case_id, linkId: file.link_id, fileId: file.id, ip: req.ip, details: { name: file.original_name, size: file.size } });
@@ -360,8 +400,97 @@ export function adminRouter(ctx: AppContext): Router {
     res.redirect(303, `/admin/cases/${file.case_id}`);
   });
 
+  // ---- case assignments ---------------------------------------------------
+  r.post('/cases/:id/members', adminsOnly, (req, res) => {
+    const id = validId(param(req, 'id'));
+    const c = caseFor(req, id);
+    if (!c) return renderCase(req, res, '');
+    const user = getUser(ctx.db, validId(field(req, 'user_id')) ?? '');
+    if (!user || user.role !== 'user' || user.disabled_at) return renderCase(req, res, c.id, { error: t(req.lang, 'users.missing') }, 400);
+    if (addCaseMember(ctx.db, c.id, user.id)) {
+      audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'case.member_add', caseId: c.id, ip: req.ip, details: { user: user.id, username: user.username } });
+    }
+    renderCase(req, res, c.id, { ok: t(req.lang, 'members.added', { username: user.username }) });
+  });
+
+  r.post('/cases/:id/members/:uid/remove', adminsOnly, (req, res) => {
+    const id = validId(param(req, 'id'));
+    const c = caseFor(req, id);
+    if (!c) return renderCase(req, res, '');
+    const user = getUser(ctx.db, validId(param(req, 'uid')) ?? '');
+    if (!user || !removeCaseMember(ctx.db, c.id, user.id)) return renderCase(req, res, c.id, { error: t(req.lang, 'users.missing') }, 404);
+    audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'case.member_remove', caseId: c.id, ip: req.ip, details: { user: user.id, username: user.username } });
+    renderCase(req, res, c.id, { ok: t(req.lang, 'members.removed', { username: user.username }) });
+  });
+
+  // ---- accounts ------------------------------------------------------------
+  function renderUsers(req: Request, res: Response, extra: Omit<UsersPageData, 'users'> = {}, status = 200): void {
+    res.status(status).type('html').send(usersPage(viewCtx(req), { users: listUsers(ctx.db), ...extra }));
+  }
+
+  function userErrorText(req: Request, err: unknown): string {
+    if (err instanceof UserError) return t(req.lang, err.key, err.params);
+    throw err;
+  }
+
+  r.get('/users', adminsOnly, (req, res) => renderUsers(req, res));
+
+  r.post('/users', adminsOnly, (req, res) => {
+    const role = field(req, 'role');
+    try {
+      const { user, password } = createUser(ctx.db, { username: field(req, 'username'), role: isRole(role) ? role : 'user' });
+      audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'user.create', ip: req.ip, details: { user: user.id, username: user.username, role: user.role } });
+      // The password is shown once, in this response, and never stored in clear.
+      renderUsers(req, res, { issued: { username: user.username, password, reset: false } });
+    } catch (err) {
+      renderUsers(req, res, { error: userErrorText(req, err) }, 400);
+    }
+  });
+
+  /** One account action: runs `fn`, audits it, and redraws the list with the outcome. */
+  function userAction(path: string, action: string, fn: (req: Request, actorId: string, id: string) => { user: UserSummary; ok: string; details?: Record<string, unknown>; issued?: UsersPageData['issued'] }) {
+    r.post(`/users/:id/${path}`, adminsOnly, (req, res) => {
+      const id = validId(param(req, 'id'));
+      if (!id) return renderUsers(req, res, { error: t(req.lang, 'users.missing') }, 404);
+      try {
+        const done = fn(req, req.session!.admin.id, id);
+        audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action, ip: req.ip, details: { user: done.user.id, username: done.user.username, ...done.details } });
+        renderUsers(req, res, { ok: done.ok, issued: done.issued });
+      } catch (err) {
+        renderUsers(req, res, { error: userErrorText(req, err) }, 400);
+      }
+    });
+  }
+
+  userAction('role', 'user.role', (req, actor, id) => {
+    const role = field(req, 'role');
+    if (!isRole(role)) throw new UserError('users.invalid_role');
+    const user = setUserRole(ctx.db, actor, id, role);
+    return { user, ok: t(req.lang, 'users.role_changed', { username: user.username, role: t(req.lang, role === 'admin' ? 'users.role.admin' : 'users.role.user') }), details: { role } };
+  });
+  userAction('password', 'user.password_reset', (req, actor, id) => {
+    const { user, password } = resetUserPassword(ctx.db, actor, id);
+    return { user, ok: t(req.lang, 'users.password_reset', { username: user.username }), issued: { username: user.username, password, reset: true } };
+  });
+  userAction('totp', 'user.totp_reset', (req, actor, id) => {
+    const user = resetUserTotp(ctx.db, actor, id);
+    return { user, ok: t(req.lang, 'users.totp_reset', { username: user.username }) };
+  });
+  userAction('disable', 'user.disable', (req, actor, id) => {
+    const user = setUserDisabled(ctx.db, actor, id, true);
+    return { user, ok: t(req.lang, 'users.disabled', { username: user.username }) };
+  });
+  userAction('enable', 'user.enable', (req, actor, id) => {
+    const user = setUserDisabled(ctx.db, actor, id, false);
+    return { user, ok: t(req.lang, 'users.enabled', { username: user.username }) };
+  });
+  userAction('delete', 'user.delete', (req, actor, id) => {
+    const user = deleteUser(ctx.db, actor, id);
+    return { user, ok: t(req.lang, 'users.deleted', { username: user.username }) };
+  });
+
   // ---- audit -------------------------------------------------------------
-  r.get('/audit', (req, res) => {
+  r.get('/audit', adminsOnly, (req, res) => {
     res.type('html').send(auditPage(viewCtx(req), listAudit(ctx.db, 300)));
   });
 

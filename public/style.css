@@ -154,9 +154,9 @@ table.audit td.details > span { display: inline-block; max-width: 24rem; white-s
 
 .badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; background: var(--badge-bg); color: var(--badge-text); vertical-align: middle; }
 .badge-open, .badge-active, .badge-complete { background: var(--badge-ok-bg); color: var(--badge-ok-text); }
-.badge-closed, .badge-revoked, .badge-deleted, .badge-aborted { background: var(--badge-bad-bg); color: var(--badge-bad-text); }
-.badge-expired, .badge-case_closed, .badge-missing { background: var(--badge-warn-bg); color: var(--badge-warn-text); }
-.badge-uploading { background: var(--badge-info-bg); color: var(--badge-info-text); }
+.badge-closed, .badge-revoked, .badge-deleted, .badge-aborted, .badge-disabled { background: var(--badge-bad-bg); color: var(--badge-bad-text); }
+.badge-pending, .badge-expired, .badge-case_closed, .badge-missing { background: var(--badge-warn-bg); color: var(--badge-warn-text); }
+.badge-uploading, .badge-role-admin { background: var(--badge-info-bg); color: var(--badge-info-text); }
 
 .muted { color: var(--muted); }
 .small { font-size: .85rem; }
@@ -241,3 +241,8 @@ table.audit td.details > span { display: inline-block; max-width: 24rem; white-s
 .lang-switch a:hover, .lang-switch a:focus-visible { color: var(--text); text-decoration: underline; }
 .lang-current { font-weight: 600; color: var(--text); }
 .version { white-space: nowrap; }
+
+/* Accounts and case assignments */
+ul.members { list-style: none; padding: 0; margin: 0 0 1rem; display: flex; flex-wrap: wrap; gap: .5rem; }
+ul.members li { display: inline-flex; align-items: center; gap: .5rem; padding: .25rem .25rem .25rem .75rem; border: 1px solid var(--border); border-radius: 999px; }
+.actions { display: flex; flex-wrap: wrap; gap: .35rem; }

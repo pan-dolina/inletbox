@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { CreateBucketCommand, DeleteBucketCommand, DeleteObjectCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 import { startServer, type RunningServer } from '../src/server.js';
-import { createAdmin } from '../src/services/auth.js';
+import { createAdmin, type Role } from '../src/services/auth.js';
 import { createCase } from '../src/services/cases.js';
 import { createLink, type CreateLinkInput } from '../src/services/links.js';
 
@@ -32,6 +32,10 @@ export interface TestApp extends RunningServer {
   base: string;
   dataDir: string;
   adminLogin(): Promise<AdminSession>;
+  /** Signs in any account; the CSRF token comes from the security page, which every signed-in account can reach. */
+  login(username: string, password: string): Promise<AdminSession>;
+  /** An account with a known password, ready to sign in (no temporary password to replace). */
+  mkUser(username: string, role?: Role): { id: string; username: string; password: string };
   mkCase(name?: string): { id: string; name: string };
   mkLink(caseId: string, opts?: Partial<CreateLinkInput>): { id: string; token: string; url: string };
   fileOnDisk(id: string): string;
@@ -81,17 +85,25 @@ export async function boot(env: Record<string, string> = {}): Promise<TestApp> {
         await s3.send(new DeleteBucketCommand({ Bucket: bucket })).catch(() => undefined);
       }
     },
-    async adminLogin() {
+    adminLogin() {
+      return app.login(ADMIN_USER, ADMIN_PASS);
+    },
+    async login(username, password) {
       const res = await fetch(`${base}/admin/login`, {
         method: 'POST', redirect: 'manual',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ username: ADMIN_USER, password: ADMIN_PASS }),
+        body: new URLSearchParams({ username, password }),
       });
       if (res.status !== 303) throw new Error(`login failed: ${res.status}`);
       const cookie = res.headers.get('set-cookie')!.split(';')[0]!;
-      const page = await fetch(`${base}/admin`, { headers: { cookie } });
+      const page = await fetch(`${base}/admin/security`, { headers: { cookie } });
       const csrf = /name="_csrf" value="([^"]+)"/.exec(await page.text())![1]!;
       return { cookie, csrf };
+    },
+    mkUser(username, role = 'user') {
+      const password = `${username}-password-123`;
+      const user = createAdmin(running.ctx.db, username, password, { role });
+      return { id: user.id, username, password };
     },
     mkCase(name = 'Test case') {
       const c = createCase(running.ctx.db, { name });

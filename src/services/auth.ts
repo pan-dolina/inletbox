@@ -3,7 +3,15 @@ import { now, transaction } from '../db.js';
 import { hashPassword, newCsrfToken, newId, newSessionId, sha256Hex, verifyPassword } from '../crypto.js';
 import { generateRecoveryCodes, generateTotpSecret, normalizeRecoveryCode, verifyTotp } from '../totp.js';
 
-export interface Admin { id: string; username: string; created_at: string; totp_enabled: boolean }
+/**
+ * A panel account. The table and the type keep their historical name: every
+ * account used to be an administrator. Since 0.5.0 `role` says what it may do —
+ * 'admin' sees every case and manages accounts, 'user' sees only the cases it is
+ * assigned to (see services/users.ts).
+ */
+export type Role = 'admin' | 'user';
+export const ROLES: readonly Role[] = ['admin', 'user'];
+export interface Admin { id: string; username: string; created_at: string; totp_enabled: boolean; role: Role; must_change_password: boolean }
 export interface Session {
   admin: Admin;
   csrfToken: string;
@@ -21,22 +29,27 @@ export const MAX_TOTP_ATTEMPTS = 5;
 export const TOTP_ACCOUNT_LOCK_THRESHOLD = 10;
 export const TOTP_ACCOUNT_LOCK_MS = 15 * 60_000;
 
-interface AdminRow { id: string; username: string; password_hash: string; created_at: string; totp_secret: string | null; totp_enabled_at: string | null; totp_last_step: number | null; totp_failed_count: number; totp_locked_until: string | null }
+interface AdminRow { id: string; username: string; password_hash: string; created_at: string; role: Role; disabled_at: string | null; must_change_password: number; totp_secret: string | null; totp_enabled_at: string | null; totp_last_step: number | null; totp_failed_count: number; totp_locked_until: string | null }
 
 function toAdmin(r: AdminRow): Admin {
-  return { id: r.id, username: r.username, created_at: r.created_at, totp_enabled: r.totp_enabled_at != null };
+  return { id: r.id, username: r.username, created_at: r.created_at, totp_enabled: r.totp_enabled_at != null, role: r.role, must_change_password: r.must_change_password === 1 };
 }
 
 function adminRow(db: Db, where: 'id' | 'username', value: string): AdminRow | undefined {
-  return db.prepare(`SELECT id, username, password_hash, created_at, totp_secret, totp_enabled_at, totp_last_step, totp_failed_count, totp_locked_until FROM admins WHERE ${where} = ?`).get(value) as AdminRow | undefined;
+  return db.prepare(`SELECT id, username, password_hash, created_at, role, disabled_at, must_change_password, totp_secret, totp_enabled_at, totp_last_step, totp_failed_count, totp_locked_until FROM admins WHERE ${where} = ?`).get(value) as AdminRow | undefined;
 }
 
-export function createAdmin(db: Db, username: string, password: string): Admin {
+export function isValidUsername(username: string): boolean {
+  return USERNAME_RE.test(username);
+}
+
+/** Creates an account; an administrator unless told otherwise (the CLI and the first account). */
+export function createAdmin(db: Db, username: string, password: string, opts: { role?: Role; mustChangePassword?: boolean } = {}): Admin {
   if (!USERNAME_RE.test(username)) throw new Error('Username must be 2-64 chars: letters, digits, . _ @ -');
   if (password.length < MIN_PASSWORD_LENGTH) throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-  const admin: Admin = { id: newId('a'), username, created_at: now(), totp_enabled: false };
-  db.prepare('INSERT INTO admins (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)')
-    .run(admin.id, username, hashPassword(password), admin.created_at);
+  const admin: Admin = { id: newId('a'), username, created_at: now(), totp_enabled: false, role: opts.role ?? 'admin', must_change_password: opts.mustChangePassword ?? false };
+  db.prepare('INSERT INTO admins (id, username, password_hash, created_at, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(admin.id, username, hashPassword(password), admin.created_at, admin.role, admin.must_change_password ? 1 : 0);
   return admin;
 }
 
@@ -51,7 +64,8 @@ export function getAdmin(db: Db, id: string): Admin | null {
 
 export function setAdminPassword(db: Db, username: string, password: string): boolean {
   if (password.length < MIN_PASSWORD_LENGTH) throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-  const res = db.prepare('UPDATE admins SET password_hash = ? WHERE username = ?').run(hashPassword(password), username);
+  // The operator typed this one themselves, so it is not a temporary password.
+  const res = db.prepare('UPDATE admins SET password_hash = ?, must_change_password = 0 WHERE username = ?').run(hashPassword(password), username);
   // Password change invalidates existing sessions of that admin.
   db.prepare('DELETE FROM sessions WHERE admin_id IN (SELECT id FROM admins WHERE username = ?)').run(username);
   return res.changes > 0;
@@ -62,18 +76,28 @@ export function changeAdminPassword(db: Db, adminId: string, currentPassword: st
   if (newPassword.length < MIN_PASSWORD_LENGTH) throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
   const admin = adminRow(db, 'id', adminId);
   if (!admin || !verifyPassword(currentPassword, admin.password_hash)) return false;
-  db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hashPassword(newPassword), admin.id);
+  if (newPassword === currentPassword) throw new Error('The new password must differ from the current one');
+  db.prepare('UPDATE admins SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(hashPassword(newPassword), admin.id);
   return true;
 }
 
 const DUMMY_HASH = hashPassword('dummy-password-for-timing');
 
-/** Always runs the password hash, so unknown usernames take as long as wrong passwords. */
+/**
+ * Always runs the password hash, so unknown usernames take as long as wrong
+ * passwords. A disabled account fails exactly like a wrong password: the login
+ * form does not confirm that the name exists.
+ */
 export function authenticate(db: Db, username: string, password: string): Admin | null {
   const row = adminRow(db, 'username', username);
   const ok = verifyPassword(password, row?.password_hash ?? DUMMY_HASH);
-  if (!row || !ok) return null;
+  if (!row || !ok || row.disabled_at) return null;
   return toAdmin(row);
+}
+
+/** Stamps a completed sign-in (both factors), for the account list. */
+export function recordLogin(db: Db, adminId: string): void {
+  db.prepare('UPDATE admins SET last_login_at = ? WHERE id = ?').run(now(), adminId);
 }
 
 // ---------------------------------------------------------------------------
@@ -93,18 +117,21 @@ export function getSession(db: Db, sessionId: string): Session | null {
   if (!sessionId || sessionId.length > 128) return null;
   const idHash = sha256Hex(sessionId);
   const row = db.prepare(
-    `SELECT s.csrf_token, s.expires_at, s.totp_verified, s.totp_attempts, a.id, a.username, a.created_at, a.totp_enabled_at
+    `SELECT s.csrf_token, s.expires_at, s.totp_verified, s.totp_attempts, a.id, a.username, a.created_at, a.totp_enabled_at,
+            a.role, a.disabled_at, a.must_change_password
      FROM sessions s JOIN admins a ON a.id = s.admin_id WHERE s.id_hash = ?`,
-  ).get(idHash) as { csrf_token: string; expires_at: string; totp_verified: number; totp_attempts: number; id: string; username: string; created_at: string; totp_enabled_at: string | null } | undefined;
+  ).get(idHash) as { csrf_token: string; expires_at: string; totp_verified: number; totp_attempts: number; id: string; username: string; created_at: string; totp_enabled_at: string | null; role: Role; disabled_at: string | null; must_change_password: number } | undefined;
   if (!row) return null;
-  if (row.expires_at <= now()) {
+  // The role and the disabled flag are read on every request, so a change an
+  // administrator makes applies at once, not at the account's next login.
+  if (row.expires_at <= now() || row.disabled_at) {
     db.prepare('DELETE FROM sessions WHERE id_hash = ?').run(idHash);
     return null;
   }
   db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id_hash = ?').run(now(), idHash);
   const totpEnabled = row.totp_enabled_at != null;
   return {
-    admin: { id: row.id, username: row.username, created_at: row.created_at, totp_enabled: totpEnabled },
+    admin: { id: row.id, username: row.username, created_at: row.created_at, totp_enabled: totpEnabled, role: row.role, must_change_password: row.must_change_password === 1 },
     csrfToken: row.csrf_token,
     expiresAt: row.expires_at,
     // An admin who enabled TOTP after this session started is still fully verified for it:

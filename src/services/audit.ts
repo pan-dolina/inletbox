@@ -16,6 +16,8 @@ export interface AuditEvent {
 export interface AuditRow {
   id: number; ts: string; actor_type: string; actor_id: string | null; action: string;
   case_id: string | null; link_id: string | null; file_id: string | null; ip: string | null; details: string | null;
+  /** The account's current name, for panel actors that still exist. */
+  actor_name: string | null;
 }
 
 export function audit(db: Db, ev: AuditEvent): void {
@@ -28,5 +30,9 @@ export function audit(db: Db, ev: AuditEvent): void {
 }
 
 export function listAudit(db: Db, limit = 200): AuditRow[] {
-  return db.prepare('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?').all(limit) as unknown as AuditRow[];
+  return db.prepare(
+    `SELECT l.*, a.username AS actor_name FROM audit_log l
+     LEFT JOIN admins a ON l.actor_type = 'admin' AND a.id = l.actor_id
+     ORDER BY l.id DESC LIMIT ?`,
+  ).all(limit) as unknown as AuditRow[];
 }
