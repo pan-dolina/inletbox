@@ -27,8 +27,8 @@ There is no bug bounty.
 
 | Version | Supported |
 | --- | --- |
-| 0.3.x | yes |
-| 0.2.x and older | no — upgrade, the upgrade path is a redeploy |
+| 0.5.x | yes |
+| 0.3.x and older | no — upgrade, the upgrade path is a redeploy |
 
 The project is pre-1.0 and fixes land on `main`. There are no backport branches: a
 security fix ships in the next release, and the supported way to take it is to redeploy.

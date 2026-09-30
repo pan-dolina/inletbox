@@ -10,6 +10,35 @@ The section for a version is what ends up in its
 reads it from this file, refuses to publish a tag that has no section here, and rewrites
 a published release's notes whenever its section changes on `main`.
 
+## [0.5.0] - 2026-09-30
+
+### Added
+
+- **Accounts with roles, and cases assigned to people.** An administrator creates
+  accounts under **Users** and gives each one a role. An *administrator* sees every case,
+  manages accounts and reads the audit log. A *user* sees only the cases they are
+  assigned to, and inside those can do everything an administrator can do with the case
+  itself — links, files, closing it. Any other case answers exactly as if it did not exist. Users can open new
+  cases, and are assigned to the ones they open. Assignments are made on the case page,
+  under **Assigned users**.
+- A new account gets a generated temporary password, shown to the administrator once; its
+  owner has to replace it before they can do anything else. From the same list an
+  administrator can change a role, issue a new password, remove a lost second factor,
+  disable an account (it is signed out at once and keeps its history) or delete it. A
+  change applies on the account's next request, not at its next sign-in. Nobody changes
+  their own account there, and the instance always keeps one active administrator.
+- The audit log names the account behind each entry, not only its id.
+
+### Changed
+
+- **Every existing account becomes an administrator** (migration `004_users`), so an
+  instance behaves as before until someone creates a user. `ADMIN_REQUIRE_TOTP` now
+  applies to every account, users included.
+- Changing your own password refuses the current one as the new one.
+- There is no 0.4.0: the version follows outletbox, whose panel this one shares.
+  **Take a copy of the database before upgrading**, as for any release with a migration —
+  `VACUUM INTO` while it runs, since the database is in WAL mode.
+
 ## [0.3.1] - 2026-09-28
 
 ### Fixed
@@ -131,6 +160,7 @@ First release.
   Docker Compose deployment.
 - Apache-2.0.
 
+[0.5.0]: https://github.com/pan-dolina/inletbox/compare/v0.3.1...v0.5.0
 [0.3.1]: https://github.com/pan-dolina/inletbox/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/pan-dolina/inletbox/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/pan-dolina/inletbox/compare/v0.1.1...v0.2.0
