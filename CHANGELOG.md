@@ -10,6 +10,31 @@ The section for a version is what ends up in its
 reads it from this file, refuses to publish a tag that has no section here, and rewrites
 a published release's notes whenever its section changes on `main`.
 
+## [0.5.1] - 2026-10-03
+
+### Added
+
+- **Released images on the GitHub Container Registry**: `ghcr.io/pan-dolina/inletbox`, tagged
+  `0.5.1`, `0.5` and `latest`, for `linux/amd64` and `linux/arm64`. Each one is built by
+  GitHub Actions from its release tag, scanned with Trivy before it is published, and
+  carries an SBOM and a signed build provenance attestation
+  (`gh attestation verify oci://ghcr.io/pan-dolina/inletbox:0.5.1 --owner pan-dolina`).
+- Installing no longer needs a clone or a local build: `docker-compose.yml` and `.env` are
+  enough, and `docker compose up -d` pulls the image.
+
+### Changed
+
+- `docker-compose.yml` runs `ghcr.io/pan-dolina/inletbox:${INLETBOX_VERSION}` instead of a locally
+  built `inletbox:local`. Set `INLETBOX_VERSION` in `.env` (the example pins `0.5.1`); without it,
+  `latest` is used. **If you build on the host today**, `docker compose up -d --build`
+  still works and now tags the build with the new name; to switch to the published image,
+  add `INLETBOX_VERSION` to `.env` and run `docker compose pull && docker compose up -d`.
+- The runtime image no longer contains npm or npx. Nothing in it used them; the CLI is
+  `node dist/cli.js`.
+- The MinIO test profile in `docker-compose.yml` uses `cgr.dev/chainguard/minio`:
+  `quay.io/minio/*` no longer allows anonymous pulls.
+- Dependency updates: AWS SDK 3.1141, `@tus/s3-store` 2.0.7.
+
 ## [0.5.0] - 2026-09-30
 
 ### Added
@@ -160,6 +185,7 @@ First release.
   Docker Compose deployment.
 - Apache-2.0.
 
+[0.5.1]: https://github.com/pan-dolina/inletbox/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/pan-dolina/inletbox/compare/v0.3.1...v0.5.0
 [0.3.1]: https://github.com/pan-dolina/inletbox/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/pan-dolina/inletbox/compare/v0.2.0...v0.3.0
