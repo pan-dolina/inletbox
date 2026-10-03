@@ -58,11 +58,17 @@ previewed, and there are no public download links.
 ## Quick start
 
 ```bash
-git clone https://github.com/pan-dolina/inletbox.git && cd inletbox
-cp .env.example .env              # set PUBLIC_URL, e.g. https://drop.example.com
-docker compose up -d --build
+mkdir inletbox && cd inletbox
+curl -fsSLO https://raw.githubusercontent.com/pan-dolina/inletbox/main/docker-compose.yml
+curl -fsSL -o .env https://raw.githubusercontent.com/pan-dolina/inletbox/main/.env.example
+# edit .env: set PUBLIC_URL, e.g. https://drop.example.com
+docker compose up -d
 docker compose exec app node dist/cli.js create-admin admin
 ```
+
+That runs the released image, `ghcr.io/pan-dolina/inletbox`, built by GitHub Actions for
+amd64 and arm64 and carrying a signed build provenance attestation. To build from source
+instead, clone the repository and run `docker compose up -d --build`.
 
 Open `PUBLIC_URL/admin`, sign in and turn on two-factor authentication under
 **Security**. The app listens on `127.0.0.1:3000`; put a reverse proxy in front of it for
