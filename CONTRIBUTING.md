@@ -52,7 +52,7 @@ There is no lint script on purpose; typecheck and the tests are the gate.
 
 ## Things that look like bugs and are not
 
-The README has the full architecture; these are the ones people try to "fix" first:
+[docs/architecture.md](docs/architecture.md) has the full architecture; these are the ones people try to "fix" first:
 
 - **`Origin: null` is accepted on admin POSTs.** `Referrer-Policy: no-referrer` makes
   Chrome send it on same-origin form posts. Sec-Fetch-Site and the CSRF token are the real
