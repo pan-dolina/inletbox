@@ -22,6 +22,11 @@ that link. **They cannot download anything.** The files come to you.
 inletbox is not a file-sharing service or a network drive. Nobody signs up, nothing is
 previewed, and there are no public download links.
 
+<p align="center">
+  <img src="docs/images/upload.png" alt="The upload page a client sees: a drop zone, a large file being uploaded at 38%, and the list of files already sent through this link" width="820">
+  <br><sub>What a client sees: drop files in, watch them upload, and see only their own files.</sub>
+</p>
+
 ## Why inletbox
 
 - **One-way by design.** A link can only upload. No server route returns file contents to
