@@ -23,9 +23,13 @@ services:
   # Then set in .env: STORAGE_BACKEND=s3, S3_ENDPOINT=http://minio:9000,
   # S3_BUCKET=inletbox, S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY as below,
   # S3_FORCE_PATH_STYLE=true. Change the credentials before exposing MinIO.
+  #
+  # The image is Chainguard's build of MinIO: MinIO no longer publishes images
+  # that can be pulled anonymously (quay.io/minio/* answers 401 since 2026-09).
+  # It carries both `minio` and `mc`, so it also serves as the one-shot init.
   # ---------------------------------------------------------------------------
   minio:
-    image: quay.io/minio/minio:latest
+    image: cgr.dev/chainguard/minio:latest
     profiles: ["minio"]
     command: server /data --console-address ":9001"
     environment:
@@ -43,7 +47,7 @@ services:
       retries: 5
 
   minio-init:
-    image: quay.io/minio/mc:latest
+    image: cgr.dev/chainguard/minio:latest
     profiles: ["minio"]
     depends_on:
       minio:
