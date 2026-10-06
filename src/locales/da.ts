@@ -229,7 +229,7 @@ export const da: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Brugere',
-  'cases.empty_assigned': 'Du er endnu ikke tildelt nogen sager. En administrator kan tildele dig en, eller du kan oprette en ny ovenfor.',
+  'cases.empty_assigned': 'Du er endnu ikke tildelt nogen sager. En kollega, der arbejder på en sag, eller en administrator kan tildele dig den, eller du kan oprette en ny ovenfor.',
   'error.forbidden.title': 'Ikke tilladt',
   'error.forbidden': 'Denne side er kun for administratorer.',
   'security.must_change_notice': 'Din adgangskode er udstedt af en administrator. Vælg din egen nedenfor, før du fortsætter.',
@@ -289,4 +289,8 @@ export const da: Messages = {
   'users.exists': 'Der findes allerede en konto med navnet {username}.',
   'users.invalid_username': 'Et brugernavn har 2–64 tegn: bogstaver, cifre og . _ @ -',
   'users.invalid_role': 'Ukendt rolle.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Du kan ikke fjerne dig selv. Bed en anden på sagen eller en administrator om det.',
+  'members.none_assignable_user': 'Der er ingen anden brugerkonto at tildele.',
 };

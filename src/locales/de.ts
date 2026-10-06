@@ -229,7 +229,7 @@ export const de: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Benutzer',
-  'cases.empty_assigned': 'Ihnen sind noch keine Vorgänge zugewiesen. Ein Administrator kann Sie einem zuweisen, oder Sie legen oben einen neuen an.',
+  'cases.empty_assigned': 'Ihnen sind noch keine Vorgänge zugewiesen. Eine Kollegin oder ein Kollege, die an einem Vorgang arbeiten, oder ein Administrator kann Sie zuweisen, oder Sie legen oben einen neuen an.',
   'error.forbidden.title': 'Nicht erlaubt',
   'error.forbidden': 'Diese Seite ist nur für Administratoren.',
   'security.must_change_notice': 'Ihr Passwort wurde von einem Administrator vergeben. Legen Sie unten ein eigenes fest, bevor Sie fortfahren.',
@@ -289,4 +289,8 @@ export const de: Messages = {
   'users.exists': 'Ein Konto namens {username} gibt es bereits.',
   'users.invalid_username': 'Ein Benutzername hat 2–64 Zeichen: Buchstaben, Ziffern und . _ @ -',
   'users.invalid_role': 'Unbekannte Rolle.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Sie können sich nicht selbst entfernen. Bitten Sie eine andere Person an diesem Vorgang oder einen Administrator darum.',
+  'members.none_assignable_user': 'Es gibt kein weiteres Benutzerkonto zum Zuweisen.',
 };

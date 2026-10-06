@@ -241,7 +241,7 @@ export const pl: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Użytkownicy',
-  'cases.empty_assigned': 'Nie masz jeszcze przypisanych spraw. Administrator może Cię przypisać do sprawy albo możesz założyć nową powyżej.',
+  'cases.empty_assigned': 'Nie masz jeszcze przypisanych spraw. Może Cię do sprawy przypisać osoba, która nad nią pracuje, albo administrator. Możesz też założyć nową sprawę powyżej.',
   'error.forbidden.title': 'Brak dostępu',
   'error.forbidden': 'Ta strona jest tylko dla administratorów.',
   'security.must_change_notice': 'Twoje hasło nadał administrator. Zanim przejdziesz dalej, ustaw poniżej własne hasło.',
@@ -301,4 +301,8 @@ export const pl: Messages = {
   'users.exists': 'Konto {username} już istnieje.',
   'users.invalid_username': 'Nazwa użytkownika ma 2–64 znaki: litery, cyfry oraz . _ @ -',
   'users.invalid_role': 'Nieznana rola.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Nie możesz odpiąć samego siebie. Poproś o to inną osobę przypisaną do sprawy albo administratora.',
+  'members.none_assignable_user': 'Nie ma innych kont użytkowników do przypisania.',
 };

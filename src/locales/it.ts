@@ -229,7 +229,7 @@ export const it: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Utenti',
-  'cases.empty_assigned': 'Non ti è ancora stata assegnata nessuna pratica. Un amministratore può assegnartene una, oppure puoi crearne una nuova qui sopra.',
+  'cases.empty_assigned': 'Non ti è ancora stata assegnata nessuna pratica. Può assegnartene una un collega che ci lavora o un amministratore, oppure puoi crearne una nuova qui sopra.',
   'error.forbidden.title': 'Non consentito',
   'error.forbidden': 'Questa pagina è riservata agli amministratori.',
   'security.must_change_notice': 'La tua password è stata assegnata da un amministratore. Imposta la tua qui sotto prima di continuare.',
@@ -289,4 +289,8 @@ export const it: Messages = {
   'users.exists': 'Esiste già un account di nome {username}.',
   'users.invalid_username': 'Un nome utente ha 2–64 caratteri: lettere, cifre e . _ @ -',
   'users.invalid_role': 'Ruolo sconosciuto.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Non puoi rimuovere te stesso. Chiedi a un’altra persona della pratica o a un amministratore.',
+  'members.none_assignable_user': 'Non c’è nessun altro account utente da assegnare.',
 };

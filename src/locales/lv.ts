@@ -229,7 +229,7 @@ export const lv: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Lietotāji',
-  'cases.empty_assigned': 'Jums vēl nav piešķirta neviena lieta. Administrators var jūs piešķirt lietai, vai arī jūs varat izveidot jaunu lietu augstāk.',
+  'cases.empty_assigned': 'Jums vēl nav piešķirta neviena lieta. Jūs lietai var piešķirt kolēģis, kas pie tās strādā, vai administrators, vai arī jūs varat izveidot jaunu lietu augstāk.',
   'error.forbidden.title': 'Nav atļauts',
   'error.forbidden': 'Šī lapa ir tikai administratoriem.',
   'security.must_change_notice': 'Jūsu paroli izsniedza administrators. Pirms turpināt, iestatiet zemāk savu paroli.',
@@ -289,4 +289,8 @@ export const lv: Messages = {
   'users.exists': 'Konts ar nosaukumu {username} jau pastāv.',
   'users.invalid_username': 'Lietotājvārdā ir 2–64 rakstzīmes: burti, cipari un . _ @ -',
   'users.invalid_role': 'Nezināma loma.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Jūs nevarat noņemt pats sevi. Palūdziet to kādam citam šajā lietā vai administratoram.',
+  'members.none_assignable_user': 'Nav cita lietotāja konta, ko piešķirt.',
 };

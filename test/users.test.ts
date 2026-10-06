@@ -7,7 +7,7 @@ import { findAdminByUsername } from '../src/services/auth.js';
 import { getCase } from '../src/services/cases.js';
 import { getFile } from '../src/services/files.js';
 import { getLink } from '../src/services/links.js';
-import { addCaseMember, getUser, listUsers, setUserDisabled, setUserRole, UserError } from '../src/services/users.js';
+import { addCaseMember, canAccessCase, getUser, listUsers, setUserDisabled, setUserRole, UserError } from '../src/services/users.js';
 import { ADMIN_USER, adminDownload, adminPost, boot, listFiles, putFile, randomBytes, type AdminSession, type TestApp } from './helpers.js';
 
 let app: TestApp;
@@ -110,12 +110,14 @@ describe('a user and the cases assigned to them', () => {
     const page = await (await get(s, `/admin/cases/${visible.id}`)).text();
     expect(page).toContain('Visible to Bob');
     expect(page).toContain('<span>bob</span>');
-    expect(page).not.toContain(`/admin/cases/${visible.id}/members`);
+    // Bob can bring colleagues in, but there is no button to take himself off.
+    expect(page).toContain(`action="/admin/cases/${visible.id}/members"`);
+    expect(page).not.toContain(`/admin/cases/${visible.id}/members/${bob.id}/remove`);
     const link = await adminPost(app, s, `/admin/cases/${visible.id}/links`, { label: 'For the client' });
     expect(await link.text()).toContain('/u/');
   });
 
-  it('cannot reach accounts, assignments or the audit log', async () => {
+  it('cannot reach accounts or the audit log', async () => {
     const carol = app.mkUser('carol');
     const c = app.mkCase('Carol works here');
     addCaseMember(app.ctx.db, c.id, carol.id);
@@ -125,8 +127,38 @@ describe('a user and the cases assigned to them', () => {
     expect((await adminPost(app, s, '/admin/users', { username: 'carols-friend', role: 'admin' })).status).toBe(403);
     expect(findAdminByUsername(app.ctx.db, 'carols-friend')).toBeNull();
     expect((await adminPost(app, s, `/admin/users/${adminId()}/disable`)).status).toBe(403);
-    expect((await adminPost(app, s, `/admin/cases/${c.id}/members/${carol.id}/remove`)).status).toBe(403);
     expect((await get(s, `/admin/cases/${c.id}`)).status).toBe(200);
+  });
+
+  it('assigns colleagues to their own cases, never elsewhere and never themselves', async () => {
+    const fiona = app.mkUser('fiona');
+    const grace = app.mkUser('grace');
+    const away = app.mkUser('away');
+    const ours = app.mkCase('Fiona and Grace');
+    const theirs = app.mkCase('Not for Fiona');
+    addCaseMember(app.ctx.db, ours.id, fiona.id);
+    const s = await app.login(fiona.username, fiona.password);
+    const g = await app.login(grace.username, grace.password);
+    expect((await get(g, `/admin/cases/${ours.id}`)).status).toBe(404);
+
+    const added = await adminPost(app, s, `/admin/cases/${ours.id}/members`, { user_id: grace.id });
+    expect(await added.text()).toContain('The account grace is now assigned to this case');
+    expect((await get(g, `/admin/cases/${ours.id}`)).status).toBe(200);
+    expect(listAudit(app.ctx.db, 50).find((r) => r.action === 'case.member_add' && r.case_id === ours.id)!.actor_id).toBe(fiona.id);
+
+    // Only active user accounts can be assigned, and a case Fiona cannot see does not exist for her.
+    setUserDisabled(app.ctx.db, adminId(), away.id, true);
+    expect((await adminPost(app, s, `/admin/cases/${ours.id}/members`, { user_id: away.id })).status).toBe(400);
+    expect((await adminPost(app, s, `/admin/cases/${ours.id}/members`, { user_id: adminId() })).status).toBe(400);
+    expect((await adminPost(app, s, `/admin/cases/${theirs.id}/members`, { user_id: grace.id })).status).toBe(404);
+    expect(canAccessCase(app.ctx.db, { id: grace.id, role: 'user' }, theirs.id)).toBe(false);
+
+    // Fiona cannot take herself off; Grace can, and she loses the case at once.
+    const self = await adminPost(app, s, `/admin/cases/${ours.id}/members/${fiona.id}/remove`);
+    expect(self.status).toBe(400);
+    expect(await self.text()).toContain('You cannot unassign yourself');
+    expect((await adminPost(app, g, `/admin/cases/${ours.id}/members/${fiona.id}/remove`)).status).toBe(200);
+    expect((await get(s, `/admin/cases/${ours.id}`)).status).toBe(404);
   });
 
   it('is assigned to the cases they create', async () => {

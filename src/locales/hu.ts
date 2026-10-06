@@ -229,7 +229,7 @@ export const hu: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Felhasználók',
-  'cases.empty_assigned': 'Még nincs Önhöz rendelt ügy. Egy rendszergazda hozzárendelheti Önt egy ügyhöz, vagy fent létrehozhat egy újat.',
+  'cases.empty_assigned': 'Még nincs Önhöz rendelt ügy. Egy ügyön dolgozó kolléga vagy egy rendszergazda hozzárendelheti Önt, vagy fent létrehozhat egy újat.',
   'error.forbidden.title': 'Nem engedélyezett',
   'error.forbidden': 'Ez az oldal csak rendszergazdáknak szól.',
   'security.must_change_notice': 'A jelszavát egy rendszergazda adta ki. Mielőtt továbblép, állítson be lent saját jelszót.',
@@ -289,4 +289,8 @@ export const hu: Messages = {
   'users.exists': 'Már létezik {username} nevű fiók.',
   'users.invalid_username': 'A felhasználónév 2–64 karakter: betűk, számjegyek és . _ @ -',
   'users.invalid_role': 'Ismeretlen szerepkör.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Saját magát nem távolíthatja el. Kérje meg az ügy egy másik résztvevőjét vagy egy rendszergazdát.',
+  'members.none_assignable_user': 'Nincs más hozzárendelhető felhasználói fiók.',
 };

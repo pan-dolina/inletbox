@@ -229,7 +229,7 @@ export const nl: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Gebruikers',
-  'cases.empty_assigned': 'Er zijn u nog geen dossiers toegewezen. Een beheerder kan u er een toewijzen, of u maakt hierboven een nieuw dossier aan.',
+  'cases.empty_assigned': 'Er zijn u nog geen dossiers toegewezen. Een collega die aan een dossier werkt, of een beheerder, kan u eraan toewijzen, of u maakt hierboven een nieuw dossier aan.',
   'error.forbidden.title': 'Niet toegestaan',
   'error.forbidden': 'Deze pagina is alleen voor beheerders.',
   'security.must_change_notice': 'Uw wachtwoord is door een beheerder uitgegeven. Stel hieronder uw eigen wachtwoord in voordat u verdergaat.',
@@ -289,4 +289,8 @@ export const nl: Messages = {
   'users.exists': 'Er bestaat al een account met de naam {username}.',
   'users.invalid_username': 'Een gebruikersnaam heeft 2–64 tekens: letters, cijfers en . _ @ -',
   'users.invalid_role': 'Onbekende rol.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'U kunt uzelf niet ontkoppelen. Vraag het iemand anders op dit dossier of een beheerder.',
+  'members.none_assignable_user': 'Er is geen ander gebruikersaccount om toe te wijzen.',
 };

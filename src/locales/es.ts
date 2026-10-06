@@ -229,7 +229,7 @@ export const es: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Usuarios',
-  'cases.empty_assigned': 'Todavía no tiene expedientes asignados. Un administrador puede asignarle uno, o puede crear uno nuevo arriba.',
+  'cases.empty_assigned': 'Todavía no tiene expedientes asignados. Puede asignarle uno un compañero que trabaje en él o un administrador, o puede crear uno nuevo arriba.',
   'error.forbidden.title': 'No permitido',
   'error.forbidden': 'Esta página es solo para administradores.',
   'security.must_change_notice': 'Su contraseña la asignó un administrador. Defina la suya propia abajo antes de continuar.',
@@ -289,4 +289,8 @@ export const es: Messages = {
   'users.exists': 'Ya existe una cuenta llamada {username}.',
   'users.invalid_username': 'Un nombre de usuario tiene 2–64 caracteres: letras, cifras y . _ @ -',
   'users.invalid_role': 'Rol desconocido.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'No puede quitarse a sí mismo. Pídaselo a otra persona del expediente o a un administrador.',
+  'members.none_assignable_user': 'No hay ninguna otra cuenta de usuario que asignar.',
 };

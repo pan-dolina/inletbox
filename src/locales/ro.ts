@@ -229,7 +229,7 @@ export const ro: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Utilizatori',
-  'cases.empty_assigned': 'Încă nu vi s-a atribuit niciun dosar. Un administrator vă poate atribui unul sau puteți crea unul nou mai sus.',
+  'cases.empty_assigned': 'Încă nu vi s-a atribuit niciun dosar. Un coleg care lucrează la un dosar sau un administrator vă poate atribui acel dosar, sau puteți crea unul nou mai sus.',
   'error.forbidden.title': 'Nepermis',
   'error.forbidden': 'Această pagină este doar pentru administratori.',
   'security.must_change_notice': 'Parola v-a fost emisă de un administrator. Setați-vă mai jos propria parolă înainte de a continua.',
@@ -289,4 +289,8 @@ export const ro: Messages = {
   'users.exists': 'Există deja un cont numit {username}.',
   'users.invalid_username': 'Un nume de utilizator are 2–64 de caractere: litere, cifre și . _ @ -',
   'users.invalid_role': 'Rol necunoscut.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Nu vă puteți retrage pe dumneavoastră înșivă. Cereți acest lucru altei persoane de la dosar sau unui administrator.',
+  'members.none_assignable_user': 'Nu există niciun alt cont de utilizator de atribuit.',
 };

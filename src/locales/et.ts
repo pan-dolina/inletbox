@@ -229,7 +229,7 @@ export const et: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Kasutajad',
-  'cases.empty_assigned': 'Sulle pole veel ühtegi toimikut määratud. Administraator saab sind toimikule määrata või saad ülal uue toimiku luua.',
+  'cases.empty_assigned': 'Sulle pole veel ühtegi toimikut määratud. Sind saab toimikule määrata kolleeg, kes selle kallal töötab, või administraator, või saad ülal uue toimiku luua.',
   'error.forbidden.title': 'Pole lubatud',
   'error.forbidden': 'See leht on ainult administraatoritele.',
   'security.must_change_notice': 'Sinu parooli andis administraator. Enne jätkamist sea allpool oma parool.',
@@ -289,4 +289,8 @@ export const et: Messages = {
   'users.exists': 'Konto nimega {username} on juba olemas.',
   'users.invalid_username': 'Kasutajanimes on 2–64 märki: tähed, numbrid ning . _ @ -',
   'users.invalid_role': 'Tundmatu roll.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Iseennast ei saa eemaldada. Palu seda kelleltki teiselt selle toimiku juurest või administraatorilt.',
+  'members.none_assignable_user': 'Määramiseks pole ühtegi teist kasutajakontot.',
 };

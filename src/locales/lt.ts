@@ -229,7 +229,7 @@ export const lt: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Naudotojai',
-  'cases.empty_assigned': 'Jums dar nepriskirta nė viena byla. Administratorius gali jus priskirti bylai arba galite sukurti naują bylą aukščiau.',
+  'cases.empty_assigned': 'Jums dar nepriskirta nė viena byla. Jus bylai gali priskirti kolega, kuris su ja dirba, arba administratorius, arba galite sukurti naują bylą aukščiau.',
   'error.forbidden.title': 'Neleidžiama',
   'error.forbidden': 'Šis puslapis skirtas tik administratoriams.',
   'security.must_change_notice': 'Jūsų slaptažodį išdavė administratorius. Prieš tęsdami nustatykite savo slaptažodį žemiau.',
@@ -289,4 +289,8 @@ export const lt: Messages = {
   'users.exists': 'Paskyra pavadinimu {username} jau yra.',
   'users.invalid_username': 'Naudotojo vardą sudaro 2–64 simboliai: raidės, skaitmenys ir . _ @ -',
   'users.invalid_role': 'Nežinomas vaidmuo.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Negalite atšaukti savo paties priskyrimo. Paprašykite kito šios bylos dalyvio arba administratoriaus.',
+  'members.none_assignable_user': 'Nėra kitos naudotojo paskyros, kurią būtų galima priskirti.',
 };

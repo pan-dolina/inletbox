@@ -229,7 +229,7 @@ export const pt: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Utilizadores',
-  'cases.empty_assigned': 'Ainda não tem processos atribuídos. Um administrador pode atribuir-lhe um, ou pode criar um novo acima.',
+  'cases.empty_assigned': 'Ainda não tem processos atribuídos. Um colega que trabalhe num processo, ou um administrador, pode atribuir-lhe esse processo, ou pode criar um novo acima.',
   'error.forbidden.title': 'Não permitido',
   'error.forbidden': 'Esta página é apenas para administradores.',
   'security.must_change_notice': 'A sua palavra-passe foi atribuída por um administrador. Defina a sua própria abaixo antes de continuar.',
@@ -289,4 +289,8 @@ export const pt: Messages = {
   'users.exists': 'Já existe uma conta chamada {username}.',
   'users.invalid_username': 'Um nome de utilizador tem 2–64 caracteres: letras, algarismos e . _ @ -',
   'users.invalid_role': 'Função desconhecida.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Não pode retirar-se a si próprio. Peça a outra pessoa do processo ou a um administrador.',
+  'members.none_assignable_user': 'Não há nenhuma outra conta de utilizador por atribuir.',
 };

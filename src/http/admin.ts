@@ -254,7 +254,7 @@ export function adminRouter(ctx: AppContext): Router {
     return c && canAccessCase(ctx.db, req.session!.admin, c.id) ? c : null;
   }
 
-  /** Accounts, assignments and the audit log are the administrators' alone. */
+  /** Accounts and the audit log are the administrators' alone. */
   const adminsOnly = (req: Request, res: Response, next: NextFunction): void => {
     if (req.session!.admin.role === 'admin') return next();
     sendError(req, res, 'error.forbidden.title', 'error.forbidden', 403);
@@ -282,7 +282,7 @@ export function adminRouter(ctx: AppContext): Router {
     if (!c) return sendError(req, res, 'error.not_found.title', 'error.case_missing');
     res.status(status).type('html').send(casePage(viewCtx(req), {
       case: c, links: listLinksForCase(ctx.db, c.id), files: listFilesForCase(ctx.db, c.id), cfg: ctx.cfg,
-      members: caseMembers(ctx.db, c.id), assignable: req.session!.admin.role === 'admin' ? assignableUsers(ctx.db, c.id) : [], ...extra,
+      members: caseMembers(ctx.db, c.id), assignable: assignableUsers(ctx.db, c.id), ...extra,
     }));
   }
 
@@ -401,7 +401,9 @@ export function adminRouter(ctx: AppContext): Router {
   });
 
   // ---- case assignments ---------------------------------------------------
-  r.post('/cases/:id/members', adminsOnly, (req, res) => {
+  // Anyone working on a case may bring a colleague in or take one off it; administrators
+  // see every case and are never members.
+  r.post('/cases/:id/members', (req, res) => {
     const id = validId(param(req, 'id'));
     const c = caseFor(req, id);
     if (!c) return renderCase(req, res, '');
@@ -413,11 +415,13 @@ export function adminRouter(ctx: AppContext): Router {
     renderCase(req, res, c.id, { ok: t(req.lang, 'members.added', { username: user.username }) });
   });
 
-  r.post('/cases/:id/members/:uid/remove', adminsOnly, (req, res) => {
+  r.post('/cases/:id/members/:uid/remove', (req, res) => {
     const id = validId(param(req, 'id'));
     const c = caseFor(req, id);
     if (!c) return renderCase(req, res, '');
     const user = getUser(ctx.db, validId(param(req, 'uid')) ?? '');
+    // Taking yourself off would lock you out of the page you are on; someone else does that.
+    if (user && user.id === req.session!.admin.id) return renderCase(req, res, c.id, { error: t(req.lang, 'members.not_self') }, 400);
     if (!user || !removeCaseMember(ctx.db, c.id, user.id)) return renderCase(req, res, c.id, { error: t(req.lang, 'users.missing') }, 404);
     audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'case.member_remove', caseId: c.id, ip: req.ip, details: { user: user.id, username: user.username } });
     renderCase(req, res, c.id, { ok: t(req.lang, 'members.removed', { username: user.username }) });

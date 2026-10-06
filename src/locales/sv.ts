@@ -229,7 +229,7 @@ export const sv: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Användare',
-  'cases.empty_assigned': 'Du har ännu inte tilldelats några ärenden. En administratör kan tilldela dig ett, eller så kan du skapa ett nytt ovan.',
+  'cases.empty_assigned': 'Du har ännu inte tilldelats några ärenden. En kollega som arbetar med ett ärende, eller en administratör, kan tilldela dig det, eller så kan du skapa ett nytt ovan.',
   'error.forbidden.title': 'Inte tillåtet',
   'error.forbidden': 'Den här sidan är bara för administratörer.',
   'security.must_change_notice': 'Ditt lösenord har utfärdats av en administratör. Välj ett eget nedan innan du fortsätter.',
@@ -289,4 +289,8 @@ export const sv: Messages = {
   'users.exists': 'Det finns redan ett konto som heter {username}.',
   'users.invalid_username': 'Ett användarnamn har 2–64 tecken: bokstäver, siffror och . _ @ -',
   'users.invalid_role': 'Okänd roll.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Du kan inte ta bort dig själv. Be någon annan i ärendet eller en administratör.',
+  'members.none_assignable_user': 'Det finns inget annat användarkonto att tilldela.',
 };

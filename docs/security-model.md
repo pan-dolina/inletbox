@@ -7,7 +7,7 @@
 | Who | Can | Cannot |
 |---|---|---|
 | **Administrator** (cookie session, optional TOTP) | everything a user can, in **every** case; create, disable and delete accounts, change roles, issue new passwords, remove a lost second factor; assign users to cases; read the audit log | change their own role, disable or delete themselves |
-| **User** (cookie session, optional TOTP) | in the cases they are **assigned** to: edit/close cases; generate and revoke links, set their expiry and limits; inspect metadata; download and delete files. Create new cases (and are assigned to them) | see or open any other case — it answers `404`, exactly like one that does not exist; manage accounts or assignments; read the audit log |
+| **User** (cookie session, optional TOTP) | in the cases they are **assigned** to: edit/close cases; generate and revoke links, set their expiry and limits; inspect metadata; download and delete files; assign other users to the case and unassign them. Create new cases (and are assigned to them) | see or open any other case — it answers `404`, exactly like one that does not exist; unassign themselves; manage accounts; read the audit log |
 | **Link holder** (token) | upload files (browser, curl, tus); see the list and status of files uploaded through **that** link | download or preview any file, including their own; delete or overwrite completed files; see files of other links; reach the admin panel |
 
 ### Accounts and roles
@@ -16,7 +16,9 @@ Every account that existed before 0.5.0 is an administrator. An administrator cr
 further accounts under **Users** and picks a role; the application generates a temporary
 password (20 characters, shown once) that its owner must replace before they can do
 anything else. Assigning someone to a case happens on the case page, under
-**Assigned users**; administrators are never listed there, because they see every case.
+**Assigned users**, and anyone who works on the case can do it: assign another active user,
+or unassign one. Nobody can unassign themselves (that would lock them out of the page they
+are on), and administrators are never listed there, because they see every case.
 The access rule lives in one function (`canAccessCase` in `src/services/users.ts`) and is
 checked on every route that takes a case, link, file or upload id, including tus.
 Role changes, unassignments and disabling take effect on the account's next request, not

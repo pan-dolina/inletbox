@@ -229,7 +229,7 @@ export const fr: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Utilisateurs',
-  'cases.empty_assigned': 'Aucun dossier ne vous est encore attribué. Un administrateur peut vous en attribuer un, ou vous pouvez en créer un ci-dessus.',
+  'cases.empty_assigned': 'Aucun dossier ne vous est encore attribué. Un collègue qui travaille sur un dossier, ou un administrateur, peut vous l’attribuer, ou vous pouvez en créer un ci-dessus.',
   'error.forbidden.title': 'Accès refusé',
   'error.forbidden': 'Cette page est réservée aux administrateurs.',
   'security.must_change_notice': 'Votre mot de passe a été attribué par un administrateur. Choisissez le vôtre ci-dessous avant de continuer.',
@@ -289,4 +289,8 @@ export const fr: Messages = {
   'users.exists': 'Un compte nommé {username} existe déjà.',
   'users.invalid_username': 'Un nom d’utilisateur compte 2 à 64 caractères : lettres, chiffres et . _ @ -',
   'users.invalid_role': 'Rôle inconnu.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Vous ne pouvez pas vous retirer vous-même. Demandez-le à une autre personne du dossier ou à un administrateur.',
+  'members.none_assignable_user': 'Il n’y a aucun autre compte utilisateur à attribuer.',
 };

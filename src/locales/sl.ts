@@ -229,7 +229,7 @@ export const sl: Messages = {
 
   // Accounts, roles and case assignments (0.5.0)
   'nav.users': 'Uporabniki',
-  'cases.empty_assigned': 'Dodeljena vam še ni nobena zadeva. Skrbnik vam jo lahko dodeli, ali pa zgoraj ustvarite novo.',
+  'cases.empty_assigned': 'Dodeljena vam še ni nobena zadeva. Dodeli vam jo lahko sodelavec, ki dela na zadevi, ali skrbnik, lahko pa zgoraj ustvarite novo.',
   'error.forbidden.title': 'Ni dovoljeno',
   'error.forbidden': 'Ta stran je samo za skrbnike.',
   'security.must_change_notice': 'Vaše geslo je izdal skrbnik. Preden nadaljujete, spodaj nastavite svoje geslo.',
@@ -289,4 +289,8 @@ export const sl: Messages = {
   'users.exists': 'Račun z imenom {username} že obstaja.',
   'users.invalid_username': 'Uporabniško ime ima 2–64 znakov: črke, številke ter . _ @ -',
   'users.invalid_role': 'Neznana vloga.',
+
+  // Assignments made by anyone on the case (0.6.0)
+  'members.not_self': 'Samega sebe ne morete odvzeti. Prosite nekoga drugega na tej zadevi ali skrbnika.',
+  'members.none_assignable_user': 'Ni drugega uporabniškega računa za dodelitev.',
 };
