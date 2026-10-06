@@ -5,7 +5,7 @@
  * becoming XSS in the admin panel and the upload page.
  */
 import type { Brand } from '../config.js';
-import { LANG_NAMES, LANGS, t, type Lang } from '../i18n.js';
+import { dateLocale, LANG_NAMES, LANGS, t, type Lang, type MessageKey } from '../i18n.js';
 
 export class SafeHtml {
   constructor(public readonly value: string) {}
@@ -38,6 +38,24 @@ export function html(strings: TemplateStringsArray, ...values: Interp[]): SafeHt
     if (i < values.length) out += render(values[i]);
   });
   return new SafeHtml(out);
+}
+
+/**
+ * A moment in time: rendered in UTC here, and in the browser's own time zone by
+ * /static/time.js, which every page loads. The UTC text is what readers without
+ * JavaScript see, and the tooltip for everyone else.
+ */
+export function fmtDate(iso: string | null | undefined, lang: Lang = 'en'): SafeHtml {
+  if (!iso) return html`—`;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return html`—`;
+  const utc = d.toLocaleString(dateLocale(lang), { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC';
+  return html`<time datetime="${d.toISOString()}">${utc}</time>`;
+}
+
+/** Like t(), for messages whose placeholders carry markup (a <time>): the text is escaped, SafeHtml goes in as it is. */
+export function tHtml(lang: Lang, key: MessageKey, params: Record<string, string | number | SafeHtml>): SafeHtml {
+  return raw(escapeHtml(t(lang, key)).replace(/\{(\w+)\}/g, (m, name: string) => (name in params ? render(params[name]!) : m)));
 }
 
 /** Embeds JSON safely inside a <script type="application/json"> element. */
@@ -98,7 +116,7 @@ export function layout(opts: LayoutOptions): string {
 <link rel="stylesheet" href="/brand/theme.css">
 ${b.logoPath ? html`<link rel="icon" href="/brand/logo">` : ''}
 </head>
-<body data-copied="${t(opts.lang, 'common.copied')}" data-copy-manual="${t(opts.lang, 'common.copy_manual')}">
+<body data-date-locale="${dateLocale(opts.lang)}" data-copied="${t(opts.lang, 'common.copied')}" data-copy-manual="${t(opts.lang, 'common.copy_manual')}">
 <header class="topbar">
   <div class="topbar-inner">
     <a class="brand" href="${opts.nav ? '/admin' : '/'}">${b.logoPath ? html`<img class="brand-logo" src="/brand/logo" alt="${b.name}">` : b.name}</a>
@@ -115,7 +133,7 @@ ${b.logoPath ? html`<link rel="icon" href="/brand/logo">` : ''}
 ${opts.body}
 </main>
 <footer class="footer">${footer} · <span class="version">inletbox v${appVersion}</span> · <details class="lang-switch"><summary aria-label="${t(opts.lang, 'common.language')}: ${LANG_NAMES[opts.lang]}">${opts.lang.toUpperCase()} · ${LANG_NAMES[opts.lang]}</summary><ul>${switcher}</ul></details></footer>
-${(opts.scripts ?? []).map((s) => html`<script src="${asset(s)}" defer></script>`)}
+${['/static/time.js', ...(opts.scripts ?? [])].map((s) => html`<script src="${asset(s)}" defer></script>`)}
 </body>
 </html>`.value;
 }

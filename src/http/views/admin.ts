@@ -1,6 +1,6 @@
 import { formatSize } from '../../config.js';
 import type { Config } from '../../config.js';
-import { dateLocale, translator, type Lang, type Translator } from '../../i18n.js';
+import { translator, type Lang, type Translator } from '../../i18n.js';
 import type { AuditRow } from '../../services/audit.js';
 import type { Role } from '../../services/auth.js';
 import type { CaseMember, UserSummary } from '../../services/users.js';
@@ -8,7 +8,7 @@ import type { Case, CaseSummary } from '../../services/cases.js';
 import type { AdminFileView } from '../../services/files.js';
 import type { Link, LinkUsage } from '../../services/links.js';
 import { linkState } from '../../services/links.js';
-import { html, layout, raw, type SafeHtml } from '../html.js';
+import { fmtDate, html, layout, raw, tHtml, type SafeHtml } from '../html.js';
 
 export interface AdminViewContext { lang: Lang; csrfToken: string; username: string; path: string; role: Role; userId: string }
 
@@ -22,12 +22,6 @@ export function adminNav(v: AdminViewContext): SafeHtml {
     <span class="muted">${v.username}</span>
     <form method="post" action="/admin/logout" class="inline"><input type="hidden" name="_csrf" value="${v.csrfToken}"><button class="btn btn-link" type="submit">${t('nav.logout')}</button></form>
   </nav>`;
-}
-
-export function fmtDate(iso: string | null | undefined, lang: Lang = 'en'): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleString(dateLocale(lang), { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC';
 }
 
 function flash(msg?: string, kind: 'error' | 'ok' = 'error'): SafeHtml {
@@ -132,7 +126,7 @@ export function casePage(v: AdminViewContext, d: CasePageData): string {
           <label class="grow">${t('cases.description')} <input name="description" value="${c.description}" maxlength="5000"></label>
           <button class="btn" type="submit">${t('common.save')}</button>
         </form>
-        <p class="muted small">${t('case.meta', { id: c.id, date: fmtDate(c.created_at, v.lang) })}</p>
+        <p class="muted small">${tHtml(v.lang, 'case.meta', { id: c.id, date: fmtDate(c.created_at, v.lang) })}</p>
       </section>
 
       ${d.newLink ? html`<section class="card highlight">

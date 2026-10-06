@@ -3,8 +3,7 @@ import type { Config } from '../../config.js';
 import { clientMessages, translator, type Lang } from '../../i18n.js';
 import type { Case } from '../../services/cases.js';
 import type { EffectiveLimits, Link, LinkUsage } from '../../services/links.js';
-import { html, jsonScript, layout, raw } from '../html.js';
-import { fmtDate } from './admin.js';
+import { fmtDate, html, jsonScript, layout, raw, tHtml } from '../html.js';
 
 export interface UploadPageData {
   lang: Lang;
@@ -55,7 +54,7 @@ export function uploadPage(d: UploadPageData): string {
       <section class="card">
         <h1>${d.case.name}</h1>
         ${d.case.description ? html`<p>${d.case.description}</p>` : ''}
-        <p class="muted">${t('upload.link_for')} <strong>${d.link.label}</strong>${d.link.expires_at ? html` · ${t('upload.valid_until', { date: fmtDate(d.link.expires_at, d.lang) })}` : ''}</p>
+        <p class="muted">${t('upload.link_for')} <strong>${d.link.label}</strong>${d.link.expires_at ? html` · ${tHtml(d.lang, 'upload.valid_until', { date: fmtDate(d.link.expires_at, d.lang) })}` : ''}</p>
         <ul class="limits small">
           <li>${t('upload.limit.file')} <strong>${formatSize(d.limits.maxFileBytes)}</strong></li>
           ${d.limits.maxFiles != null ? html`<li>${t('upload.limit.files')} <strong>${d.limits.maxFiles}</strong> ${t('upload.used_n', { n: d.usage.file_count })}</li>` : ''}

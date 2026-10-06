@@ -27,8 +27,8 @@
   }
   function fmtDate(iso) {
     if (!iso) return '—';
-    var d = new Date(iso);
-    return d.toLocaleString(cfg.lang === 'en' ? 'en-GB' : cfg.lang);
+    // time.js loads first; same format and zone as every other timestamp on the page.
+    return window.localTime(iso) || '—';
   }
   function el(tag, cls, text) {
     var e = document.createElement(tag);
