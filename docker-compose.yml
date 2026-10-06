@@ -1,7 +1,7 @@
 services:
   app:
     # The released image from GitHub Container Registry. Pin the version in .env
-    # (INLETBOX_VERSION=0.5.1); `latest` is the newest release. `docker compose up -d` pulls
+    # (INLETBOX_VERSION=0.6.0); `latest` is the newest release. `docker compose up -d` pulls
     # it; `docker compose up -d --build` builds this checkout instead, under the
     # same name.
     image: ghcr.io/pan-dolina/inletbox:${INLETBOX_VERSION:-latest}

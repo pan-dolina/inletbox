@@ -10,6 +10,18 @@ The section for a version is what ends up in its
 reads it from this file, refuses to publish a tag that has no section here, and rewrites
 a published release's notes whenever its section changes on `main`.
 
+## [0.6.0] - 2026-10-06
+
+### Added
+
+- **Users assign colleagues to their cases.** Anyone who works on a case can now assign
+  another active user to it, or unassign one, on the case page under **Assigned users**;
+  until now only administrators could. Nobody can unassign themselves — that would lock
+  them out of the page they are on — so someone else on the case, or an administrator,
+  does it. A case you cannot see still answers as if it did not exist, so nobody can be
+  added to a case from outside it. Each change is in the audit log under the name of
+  whoever made it. The list to choose from shows the names of all active user accounts.
+
 ## [0.5.1] - 2026-10-03
 
 ### Added
@@ -185,6 +197,7 @@ First release.
   Docker Compose deployment.
 - Apache-2.0.
 
+[0.6.0]: https://github.com/pan-dolina/inletbox/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/pan-dolina/inletbox/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/pan-dolina/inletbox/compare/v0.3.1...v0.5.0
 [0.3.1]: https://github.com/pan-dolina/inletbox/compare/v0.3.0...v0.3.1
