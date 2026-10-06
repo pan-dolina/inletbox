@@ -37,7 +37,7 @@ signed build provenance attestation. To check that an image really was built fro
 repository:
 
 ```bash
-gh attestation verify oci://ghcr.io/pan-dolina/inletbox:0.6.1 --owner pan-dolina
+gh attestation verify oci://ghcr.io/pan-dolina/inletbox:0.6.2 --owner pan-dolina
 ```
 
 `docker-compose.yml` runs the version set in `.env` as `INLETBOX_VERSION`. Pin it

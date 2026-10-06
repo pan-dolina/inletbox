@@ -10,6 +10,13 @@ The section for a version is what ends up in its
 reads it from this file, refuses to publish a tag that has no section here, and rewrites
 a published release's notes whenever its section changes on `main`.
 
+## [0.6.2] - 2026-10-06
+
+### Changed
+
+- Dependency updates: the AWS SDK used for S3 storage to 3.1146, plus `@types/node` and
+  the test tooling (Vitest 5.0.3). Nothing changes for operators or link holders.
+
 ## [0.6.1] - 2026-10-06
 
 ### Changed
@@ -212,6 +219,7 @@ First release.
   Docker Compose deployment.
 - Apache-2.0.
 
+[0.6.2]: https://github.com/pan-dolina/inletbox/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/pan-dolina/inletbox/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/pan-dolina/inletbox/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/pan-dolina/inletbox/compare/v0.5.0...v0.5.1
