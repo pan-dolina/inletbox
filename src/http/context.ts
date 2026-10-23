@@ -30,3 +30,5 @@ declare global {
 }
 
 export const SESSION_COOKIE = 'inletbox_sid';
+/** The short-lived cookie of a device-bound session (DBSC), renewed by the browser with its device key. */
+export const BOUND_COOKIE = 'inletbox_bound';

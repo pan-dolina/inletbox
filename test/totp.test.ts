@@ -6,6 +6,12 @@ import { findAdminByUsername, pendingTotpSecret, totpLockedUntil } from '../src/
 import { base32Decode, base32Encode, hotp, otpauthUri, totp, totpStep, verifyTotp } from '../src/totp.js';
 import { ADMIN_PASS, ADMIN_USER, adminPost, boot, type AdminSession, type TestApp } from './helpers.js';
 
+/** The recovery codes in the block that shows them once. */
+function shownCodes(page: string): string[] {
+  const block = /<pre class="mono" data-copy-source>([^<]*)<\/pre>/.exec(page)?.[1] ?? '';
+  return [...block.matchAll(/\b([a-z2-7]{5}-[a-z2-7]{5})\b/g)].map((m) => m[1]!);
+}
+
 const execFileP = promisify(execFile);
 
 describe('TOTP primitives', () => {
@@ -111,7 +117,7 @@ describe('admin two-factor login flow', () => {
     const ok = await adminPost(app, s, '/admin/security/totp/confirm', { code: totp(secret) });
     expect(ok.status).toBe(200);
     const okPage = await ok.text();
-    recoveryCodes = [...okPage.matchAll(/\b([a-z2-7]{5}-[a-z2-7]{5})\b/g)].map((m) => m[1]!);
+    recoveryCodes = shownCodes(okPage);
     expect(recoveryCodes).toHaveLength(8);
     expect(findAdminByUsername(app.ctx.db, ADMIN_USER)!.totp_enabled).toBe(true);
     // The enrolling session stays usable; the codes are not shown again.
@@ -213,7 +219,7 @@ describe('admin two-factor login flow', () => {
     expect((await adminPost(app, s, '/admin/security/totp/recovery', { code: '000000' })).status).toBe(400);
     const res = await adminPost(app, s, '/admin/security/totp/recovery', { code: freshCode() });
     expect(res.status).toBe(200);
-    const fresh = [...(await res.text()).matchAll(/\b([a-z2-7]{5}-[a-z2-7]{5})\b/g)].map((m) => m[1]!);
+    const fresh = shownCodes(await res.text());
     expect(fresh).toHaveLength(8);
     expect(fresh).not.toContain(recoveryCodes[1]);
     const c = await passwordLogin();
@@ -249,7 +255,7 @@ describe('admin two-factor login flow', () => {
       cwd: new URL('..', import.meta.url).pathname,
       env: { ...process.env, DATA_DIR: app.dataDir, PUBLIC_URL: app.base, STORAGE_BACKEND: 'local' },
     });
-    expect(stdout).toContain('TOTP disabled');
+    expect(stdout).toContain('Second factors (TOTP, passkeys, recovery codes) removed');
     expect(findAdminByUsername(app.ctx.db, ADMIN_USER)!.totp_enabled).toBe(false);
     // The CLI also ends all sessions of that admin.
     expect((await fetch(`${app.base}/admin`, { headers: { cookie: s.cookie }, redirect: 'manual' })).headers.get('location')).toBe('/admin/login');
@@ -270,7 +276,7 @@ describe('ADMIN_REQUIRE_TOTP', () => {
     const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
     expect((await fetch(`${app.base}/admin`, { headers: { cookie }, redirect: 'manual' })).headers.get('location')).toBe('/admin/security');
     const securityPage = await (await fetch(`${app.base}/admin/security`, { headers: { cookie } })).text();
-    expect(securityPage).toContain('requires two-factor authentication');
+    expect(securityPage).toContain('requires a second factor');
     const csrf = /name="_csrf" value="([^"]+)"/.exec(securityPage)![1]!;
     const s = { cookie, csrf };
     expect((await adminPost(app, s, '/admin/cases', { name: 'blocked' })).status).toBe(403);

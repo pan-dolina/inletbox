@@ -19,7 +19,9 @@ it contains no secrets). Sizes: `1048576`, `500MB`, `2GB`, `512KiB` (binary unit
 | `INCOMPLETE_UPLOAD_TTL_HOURS` | `24` | Unfinished uploads older than this are removed and their reservation released. |
 | `CLEANUP_INTERVAL_MINUTES` | `30` | How often the in-process cleanup runs (`0` disables it; `node dist/cli.js cleanup` runs it manually). |
 | `SESSION_TTL_HOURS` | `12` | Admin session lifetime. |
-| `ADMIN_REQUIRE_TOTP` | `false` | Enforce TOTP: an admin without a second factor only sees the security page until they enrol. |
+| `ADMIN_REQUIRE_TOTP` | `false` | Require a second factor (authenticator app or passkey): an account without one only sees the security page until it adds one. |
+| `REAUTH_WINDOW_MINUTES` | `10` | How long a sign-in or a confirmation covers sensitive actions (downloads, new links, account management, second factors). 1–720. |
+| `DEVICE_BOUND_SESSIONS` | `true` | Offer Device Bound Session Credentials to browsers that support them. Only on HTTPS (`COOKIE_SECURE`). |
 | `COOKIE_SECURE` | auto (`https` → `true`) | `false` only for plain-HTTP local development. |
 | `LOGIN_RATE_LIMIT_PER_15MIN` | `10` | Failed logins (password or TOTP step) per IP. |
 | `TOKEN_FAILURE_RATE_LIMIT_PER_15MIN` | `30` | Unknown/unauthenticated token attempts per IP (brute force). |

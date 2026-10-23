@@ -4,13 +4,13 @@
  *   reset-password <username> [--password-stdin]
  *   migrate                                       apply pending migrations
  *   cleanup [--ttl-hours N]                       run the housekeeping job once
- *   disable-totp <username>                       remove the second factor (lost authenticator)
+ *   disable-totp <username>                       remove every second factor: TOTP and passkeys (lost device)
  */
 import readline from 'node:readline';
 import { loadConfig } from './config.js';
 import { migrate, openDatabase } from './db.js';
 import { log, setLogLevel } from './log.js';
-import { countAdmins, createAdmin, findAdminByUsername, forceDisableTotp, MIN_PASSWORD_LENGTH, setAdminPassword } from './services/auth.js';
+import { countAdmins, createAdmin, findAdminByUsername, MIN_PASSWORD_LENGTH, resetSecondFactors, setAdminPassword } from './services/auth.js';
 import { runCleanup } from './services/cleanup.js';
 import { createStorage } from './storage/index.js';
 
@@ -81,8 +81,8 @@ async function main(argv: string[]): Promise<void> {
       if (!username) throw new Error('usage: disable-totp <username>');
       const admin = findAdminByUsername(db, username);
       if (!admin) throw new Error(`No admin named "${username}"`);
-      forceDisableTotp(db, admin.id);
-      console.log(`TOTP disabled for "${username}"; all their sessions were ended. They should re-enrol from the panel (Bezpieczeństwo).`);
+      resetSecondFactors(db, admin.id);
+      console.log(`Second factors (TOTP, passkeys, recovery codes) removed for "${username}"; all their sessions were ended. They should set one up again under Security.`);
       break;
     }
     case 'cleanup': {

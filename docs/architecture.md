@@ -14,9 +14,11 @@ src/
   db.ts                node:sqlite, migrations from migrations/*.sql, transaction()
   crypto.ts            ids, tokens, sha256, scrypt
   totp.ts              RFC 6238 TOTP, base32, recovery codes
+  webauthn.ts          passkey verification (attestation none, SPKI keys) on node:crypto
+  dbsc.ts              Device Bound Session Credentials proofs (dbsc+jwt) on node:crypto
   log.ts               JSON logging + redaction
   storage/             types (interface), local, s3, limit (byte counter + hash)
-  services/            auth (accounts, sessions, TOTP), users (roles, case assignments), cases, links, files (reservations), audit, cleanup
+  services/            auth (accounts, sessions, TOTP), passkeys, sessions (list, DBSC bindings), users (roles, case assignments), cases, links, files (reservations), audit, cleanup
   http/
     app.ts             application assembly, static assets, /lang/:lang switcher, 404/500
     brand.ts           /brand/logo, /brand/theme.css
@@ -38,7 +40,9 @@ Tables ([`migrations/`](../migrations/)):
   totp_enabled_at, totp_last_step, totp_failed_count, totp_locked_until)
 - `case_members` (case_id, admin_id) — which user may work on which case
 - `admin_recovery_codes` (admin_id, code_hash, used_at)
-- `sessions` (id_hash, admin_id, csrf_token, expires_at, totp_verified, totp_attempts)
+- `sessions` (id_hash, public_id, admin_id, csrf_token, expires_at, totp_verified, totp_attempts, ip, user_agent, second_factor, confirmed_until, pending WebAuthn challenge, DBSC challenge)
+- `admin_passkeys` (credential_id, public_key as SPKI, algorithm, sign_count, name)
+- `session_bindings` (DBSC: session_hash, alg, jwk, current and previous bound-cookie hash, challenge)
 - `cases` (id, name, description, status open|closed)
 - `links` (id, case_id, label, token_hash, token_hint, expires_at, revoked_at,
   max_file_bytes, max_files, max_total_bytes, last_used_at)

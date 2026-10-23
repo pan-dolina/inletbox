@@ -5,8 +5,9 @@ import { safeEqual } from '../crypto.js';
 import { isLang, LANG_COOKIE, negotiateLang, t, type MessageKey } from '../i18n.js';
 import { log, redact } from '../log.js';
 import { getSession } from '../services/auth.js';
+import { checkBoundCookie } from '../services/sessions.js';
 import { resolveToken, touchLink, type LinkState } from '../services/links.js';
-import { SESSION_COOKIE, type AppContext } from './context.js';
+import { BOUND_COOKIE, SESSION_COOKIE, type AppContext } from './context.js';
 
 // ---------------------------------------------------------------------------
 // Security headers
@@ -99,10 +100,14 @@ export function sessionCookie(ctx: AppContext, value: string, maxAgeSec: number)
 
 export function sessionMiddleware(ctx: AppContext): RequestHandler {
   return (req, _res, next) => {
-    const sid = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+    const cookies = parseCookies(req.headers.cookie);
+    const sid = cookies[SESSION_COOKIE];
     if (sid) {
       const session = getSession(ctx.db, sid);
-      if (session) {
+      // A device-bound session counts only together with its current bound cookie.
+      if (session && checkBoundCookie(ctx.db, sid, cookies[BOUND_COOKIE]) === 'rejected') {
+        log.debug('bound session without a current bound cookie', { path: req.path });
+      } else if (session) {
         req.session = session;
         req.sessionId = sid;
       }
@@ -122,6 +127,27 @@ export function requireAdmin(opts: { verified: boolean } = { verified: true }): 
     }
     res.status(401).type('text/plain').send('Unauthorized');
   };
+}
+
+/**
+ * Sensitive actions (downloading files, issuing links, managing accounts and second
+ * factors) need a recent confirmation: the login itself, or a passkey, a code or —
+ * for accounts without a second factor — the password, given within the window.
+ * A stolen session cookie on its own can look around, but cannot take data out or
+ * dig itself in. `back` says where a refused form post should return afterwards.
+ */
+export function requireConfirmed(back: (req: Request) => string): RequestHandler {
+  return (req, res, next) => {
+    const until = req.session?.confirmedUntil;
+    if (until && until > new Date().toISOString()) return next();
+    const target = req.method === 'GET' || req.method === 'HEAD' ? req.originalUrl : back(req);
+    res.redirect(303, `/admin/confirm?next=${encodeURIComponent(target)}`);
+  };
+}
+
+/** Only a path inside the panel is a place to go back to. */
+export function safeNext(raw: unknown): string {
+  return typeof raw === 'string' && raw.startsWith('/admin') && !raw.startsWith('//') && !/[\\\r\n]/.test(raw) ? raw : '/admin';
 }
 
 /**

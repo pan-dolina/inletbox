@@ -11,7 +11,15 @@ import { generateRecoveryCodes, generateTotpSecret, normalizeRecoveryCode, verif
  */
 export type Role = 'admin' | 'user';
 export const ROLES: readonly Role[] = ['admin', 'user'];
-export interface Admin { id: string; username: string; created_at: string; totp_enabled: boolean; role: Role; must_change_password: boolean }
+export interface Admin {
+  id: string; username: string; created_at: string; totp_enabled: boolean; role: Role; must_change_password: boolean;
+  /** Registered passkeys (WebAuthn credentials); each one is a second factor on its own. */
+  passkeys: number;
+}
+/** How a session passed its second factor. */
+export type SecondFactor = 'totp' | 'recovery' | 'passkey';
+/** Who connected, recorded when the session starts and shown in the session list. */
+export interface SessionMeta { ip?: string; userAgent?: string }
 export interface Session {
   admin: Admin;
   csrfToken: string;
@@ -19,6 +27,16 @@ export interface Session {
   /** True once the second factor was verified (or none is required). */
   totpVerified: boolean;
   totpAttempts: number;
+  /** Names the session in the panel; the cookie value and its hash are never shown. */
+  publicId: string;
+  secondFactor: SecondFactor | null;
+  /** Sensitive actions are allowed until then without asking the account to confirm again. */
+  confirmedUntil: string | null;
+}
+
+/** True when the account has a second factor of any kind: an authenticator app or a passkey. */
+export function hasSecondFactor(admin: Pick<Admin, 'totp_enabled' | 'passkeys'>): boolean {
+  return admin.totp_enabled || admin.passkeys > 0;
 }
 
 const USERNAME_RE = /^[a-zA-Z0-9._@-]{2,64}$/;
@@ -29,14 +47,15 @@ export const MAX_TOTP_ATTEMPTS = 5;
 export const TOTP_ACCOUNT_LOCK_THRESHOLD = 10;
 export const TOTP_ACCOUNT_LOCK_MS = 15 * 60_000;
 
-interface AdminRow { id: string; username: string; password_hash: string; created_at: string; role: Role; disabled_at: string | null; must_change_password: number; totp_secret: string | null; totp_enabled_at: string | null; totp_last_step: number | null; totp_failed_count: number; totp_locked_until: string | null }
+interface AdminRow { id: string; username: string; password_hash: string; created_at: string; role: Role; disabled_at: string | null; must_change_password: number; totp_secret: string | null; totp_enabled_at: string | null; totp_last_step: number | null; totp_failed_count: number; totp_locked_until: string | null; passkey_count: number }
 
 function toAdmin(r: AdminRow): Admin {
-  return { id: r.id, username: r.username, created_at: r.created_at, totp_enabled: r.totp_enabled_at != null, role: r.role, must_change_password: r.must_change_password === 1 };
+  return { id: r.id, username: r.username, created_at: r.created_at, totp_enabled: r.totp_enabled_at != null, role: r.role, must_change_password: r.must_change_password === 1, passkeys: r.passkey_count };
 }
 
 function adminRow(db: Db, where: 'id' | 'username', value: string): AdminRow | undefined {
-  return db.prepare(`SELECT id, username, password_hash, created_at, role, disabled_at, must_change_password, totp_secret, totp_enabled_at, totp_last_step, totp_failed_count, totp_locked_until FROM admins WHERE ${where} = ?`).get(value) as AdminRow | undefined;
+  return db.prepare(`SELECT id, username, password_hash, created_at, role, disabled_at, must_change_password, totp_secret, totp_enabled_at, totp_last_step, totp_failed_count, totp_locked_until,
+    (SELECT COUNT(*) FROM admin_passkeys p WHERE p.admin_id = admins.id) AS passkey_count FROM admins WHERE ${where} = ?`).get(value) as AdminRow | undefined;
 }
 
 export function isValidUsername(username: string): boolean {
@@ -47,7 +66,7 @@ export function isValidUsername(username: string): boolean {
 export function createAdmin(db: Db, username: string, password: string, opts: { role?: Role; mustChangePassword?: boolean } = {}): Admin {
   if (!USERNAME_RE.test(username)) throw new Error('Username must be 2-64 chars: letters, digits, . _ @ -');
   if (password.length < MIN_PASSWORD_LENGTH) throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-  const admin: Admin = { id: newId('a'), username, created_at: now(), totp_enabled: false, role: opts.role ?? 'admin', must_change_password: opts.mustChangePassword ?? false };
+  const admin: Admin = { id: newId('a'), username, created_at: now(), totp_enabled: false, role: opts.role ?? 'admin', must_change_password: opts.mustChangePassword ?? false, passkeys: 0 };
   db.prepare('INSERT INTO admins (id, username, password_hash, created_at, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?)')
     .run(admin.id, username, hashPassword(password), admin.created_at, admin.role, admin.must_change_password ? 1 : 0);
   return admin;
@@ -104,23 +123,52 @@ export function recordLogin(db: Db, adminId: string): void {
 // Sessions
 // ---------------------------------------------------------------------------
 
-export function createSession(db: Db, admin: Admin, ttlMs: number): { sessionId: string; csrfToken: string } {
+/**
+ * A new session after the password check. Without a second factor it is complete at
+ * once; otherwise it stays pending until the factor passes (verifySessionTotp or
+ * completeSecondFactor), which replaces it with a fresh one.
+ */
+export function createSession(db: Db, admin: Admin, ttlMs: number, meta: SessionMeta = {}): { sessionId: string; csrfToken: string } {
   const sessionId = newSessionId();
   const csrfToken = newCsrfToken();
   const ts = now();
-  db.prepare('INSERT INTO sessions (id_hash, admin_id, csrf_token, created_at, last_seen_at, expires_at, totp_verified, totp_attempts) VALUES (?, ?, ?, ?, ?, ?, ?, 0)')
-    .run(sha256Hex(sessionId), admin.id, csrfToken, ts, ts, new Date(Date.now() + ttlMs).toISOString(), admin.totp_enabled ? 0 : 1);
+  db.prepare(`INSERT INTO sessions (id_hash, admin_id, csrf_token, created_at, last_seen_at, expires_at, totp_verified, totp_attempts, public_id, ip, user_agent)
+              VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`)
+    .run(sha256Hex(sessionId), admin.id, csrfToken, ts, ts, new Date(Date.now() + ttlMs).toISOString(), hasSecondFactor(admin) ? 0 : 1,
+      newId('s'), meta.ip?.slice(0, 64) ?? null, meta.userAgent?.slice(0, 300) ?? null);
   return { sessionId, csrfToken };
+}
+
+/** Sensitive actions need no further confirmation for `ms` from now. */
+export function markConfirmed(db: Db, sessionId: string, ms: number): string {
+  const until = new Date(Date.now() + ms).toISOString();
+  db.prepare('UPDATE sessions SET confirmed_until = ? WHERE id_hash = ?').run(until, sha256Hex(sessionId));
+  return until;
+}
+
+/**
+ * The second factor of a pending session passed: the pending session is replaced by a
+ * fresh one, so the cookie issued at the password step never becomes the privileged one.
+ * Runs inside the caller's transaction.
+ */
+export function completeSecondFactor(db: Db, pendingIdHash: string, admin: Admin, ttlMs: number, factor: SecondFactor): { sessionId: string; csrfToken: string } {
+  const old = db.prepare('SELECT ip, user_agent FROM sessions WHERE id_hash = ?').get(pendingIdHash) as { ip: string | null; user_agent: string | null } | undefined;
+  db.prepare('UPDATE admins SET totp_failed_count = 0, totp_locked_until = NULL WHERE id = ?').run(admin.id);
+  db.prepare('DELETE FROM sessions WHERE id_hash = ?').run(pendingIdHash);
+  const fresh = createSession(db, admin, ttlMs, { ip: old?.ip ?? undefined, userAgent: old?.user_agent ?? undefined });
+  db.prepare('UPDATE sessions SET totp_verified = 1, second_factor = ? WHERE id_hash = ?').run(factor, sha256Hex(fresh.sessionId));
+  return fresh;
 }
 
 export function getSession(db: Db, sessionId: string): Session | null {
   if (!sessionId || sessionId.length > 128) return null;
   const idHash = sha256Hex(sessionId);
   const row = db.prepare(
-    `SELECT s.csrf_token, s.expires_at, s.totp_verified, s.totp_attempts, a.id, a.username, a.created_at, a.totp_enabled_at,
-            a.role, a.disabled_at, a.must_change_password
+    `SELECT s.csrf_token, s.expires_at, s.totp_verified, s.totp_attempts, s.public_id, s.second_factor, s.confirmed_until,
+            a.id, a.username, a.created_at, a.totp_enabled_at, a.role, a.disabled_at, a.must_change_password,
+            (SELECT COUNT(*) FROM admin_passkeys p WHERE p.admin_id = a.id) AS passkey_count
      FROM sessions s JOIN admins a ON a.id = s.admin_id WHERE s.id_hash = ?`,
-  ).get(idHash) as { csrf_token: string; expires_at: string; totp_verified: number; totp_attempts: number; id: string; username: string; created_at: string; totp_enabled_at: string | null; role: Role; disabled_at: string | null; must_change_password: number } | undefined;
+  ).get(idHash) as { csrf_token: string; expires_at: string; totp_verified: number; totp_attempts: number; public_id: string; second_factor: SecondFactor | null; confirmed_until: string | null; id: string; username: string; created_at: string; totp_enabled_at: string | null; role: Role; disabled_at: string | null; must_change_password: number; passkey_count: number } | undefined;
   if (!row) return null;
   // The role and the disabled flag are read on every request, so a change an
   // administrator makes applies at once, not at the account's next login.
@@ -129,15 +177,18 @@ export function getSession(db: Db, sessionId: string): Session | null {
     return null;
   }
   db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id_hash = ?').run(now(), idHash);
-  const totpEnabled = row.totp_enabled_at != null;
+  const admin: Admin = { id: row.id, username: row.username, created_at: row.created_at, totp_enabled: row.totp_enabled_at != null, role: row.role, must_change_password: row.must_change_password === 1, passkeys: row.passkey_count };
   return {
-    admin: { id: row.id, username: row.username, created_at: row.created_at, totp_enabled: totpEnabled, role: row.role, must_change_password: row.must_change_password === 1 },
+    admin,
     csrfToken: row.csrf_token,
     expiresAt: row.expires_at,
-    // An admin who enabled TOTP after this session started is still fully verified for it:
-    // they proved the second factor when enabling it in this very session.
-    totpVerified: !totpEnabled || row.totp_verified === 1,
+    // An admin who added a second factor after this session started is still fully verified
+    // for it: they proved the factor when adding it in this very session.
+    totpVerified: !hasSecondFactor(admin) || row.totp_verified === 1,
     totpAttempts: row.totp_attempts,
+    publicId: row.public_id,
+    secondFactor: row.second_factor,
+    confirmedUntil: row.confirmed_until,
   };
 }
 
@@ -158,13 +209,13 @@ export function purgeExpiredSessions(db: Db): number {
 // ---------------------------------------------------------------------------
 
 export type TotpLoginResult =
-  | { status: 'ok'; sessionId: string; csrfToken: string }
+  | { status: 'ok'; sessionId: string; csrfToken: string; factor: SecondFactor }
   | { status: 'invalid' }
   /** The pending session was destroyed (too many wrong codes in it) or the account is temporarily locked. */
   | { status: 'locked'; accountLockedUntil?: string };
 
 /** Records a wrong code against the account; locks it for TOTP_ACCOUNT_LOCK_MS after the threshold. */
-function recordTotpFailure(db: Db, admin: AdminRow, nowMs: number): string | undefined {
+export function recordTotpFailure(db: Db, admin: { id: string; totp_failed_count: number }, nowMs: number): string | undefined {
   const count = admin.totp_failed_count + 1;
   if (count >= TOTP_ACCOUNT_LOCK_THRESHOLD) {
     const until = new Date(nowMs + TOTP_ACCOUNT_LOCK_MS).toISOString();
@@ -189,7 +240,8 @@ export function totpLockedUntil(db: Db, adminId: string, nowMs = Date.now()): st
 
 /**
  * Verifies the second factor for a pending session. Accepts a TOTP code or an
- * unused recovery code. Wrong attempts are counted per session (MAX_TOTP_ATTEMPTS,
+ * unused recovery code (recovery codes exist while the account has any second
+ * factor, so they also stand in for a lost passkey). Wrong attempts are counted per session (MAX_TOTP_ATTEMPTS,
  * then the session is destroyed) and per account (TOTP_ACCOUNT_LOCK_THRESHOLD,
  * then a temporary lockout that no new session or IP can get around).
  * On success the session id is rotated: the cookie issued at the password step
@@ -201,23 +253,18 @@ export function verifySessionTotp(db: Db, sessionId: string, code: string, ttlMs
     const s = db.prepare('SELECT admin_id, totp_attempts FROM sessions WHERE id_hash = ?').get(idHash) as { admin_id: string; totp_attempts: number } | undefined;
     if (!s) return { status: 'locked' };
     const admin = adminRow(db, 'id', s.admin_id);
-    if (!admin?.totp_secret || !admin.totp_enabled_at) return { status: 'invalid' };
+    if (!admin || !hasSecondFactor(toAdmin(admin))) return { status: 'invalid' };
     if (isTotpLocked(admin, nowMs)) return { status: 'locked', accountLockedUntil: admin.totp_locked_until! };
 
-    const step = verifyTotp(admin.totp_secret, code, { nowMs, minStep: admin.totp_last_step });
-    let ok = step != null;
-    if (ok) {
+    let factor: SecondFactor | null = null;
+    const step = admin.totp_secret && admin.totp_enabled_at ? verifyTotp(admin.totp_secret, code, { nowMs, minStep: admin.totp_last_step }) : null;
+    if (step != null) {
       db.prepare('UPDATE admins SET totp_last_step = ? WHERE id = ?').run(step, admin.id);
-    } else {
-      ok = consumeRecoveryCode(db, admin.id, code);
+      factor = 'totp';
+    } else if (consumeRecoveryCode(db, admin.id, code)) {
+      factor = 'recovery';
     }
-    if (ok) {
-      db.prepare('UPDATE admins SET totp_failed_count = 0, totp_locked_until = NULL WHERE id = ?').run(admin.id);
-      db.prepare('DELETE FROM sessions WHERE id_hash = ?').run(idHash);
-      const fresh = createSession(db, toAdmin(admin), ttlMs);
-      db.prepare('UPDATE sessions SET totp_verified = 1 WHERE id_hash = ?').run(sha256Hex(fresh.sessionId));
-      return { status: 'ok', ...fresh };
-    }
+    if (factor) return { status: 'ok', factor, ...completeSecondFactor(db, idHash, toAdmin(admin), ttlMs, factor) };
     const accountLockedUntil = recordTotpFailure(db, admin, nowMs);
     if (accountLockedUntil) return { status: 'locked', accountLockedUntil };
     const attempts = s.totp_attempts + 1;
@@ -230,7 +277,26 @@ export function verifySessionTotp(db: Db, sessionId: string, code: string, ttlMs
   });
 }
 
-function consumeRecoveryCode(db: Db, adminId: string, code: string): boolean {
+/**
+ * Confirms a sensitive action with a code from the app or a recovery code, inside a
+ * complete session. Same replay guard and per-account lockout as at login.
+ */
+export function verifyConfirmCode(db: Db, adminId: string, code: string, nowMs = Date.now()): 'ok' | 'invalid' | 'locked' {
+  return transaction(db, () => {
+    const admin = adminRow(db, 'id', adminId);
+    if (!admin) return 'invalid';
+    if (isTotpLocked(admin, nowMs)) return 'locked';
+    const step = admin.totp_secret && admin.totp_enabled_at ? verifyTotp(admin.totp_secret, code, { nowMs, minStep: admin.totp_last_step }) : null;
+    if (step != null) {
+      db.prepare('UPDATE admins SET totp_last_step = ?, totp_failed_count = 0 WHERE id = ?').run(step, adminId);
+      return 'ok';
+    }
+    if (consumeRecoveryCode(db, adminId, code)) return 'ok';
+    return recordTotpFailure(db, admin, nowMs) ? 'locked' : 'invalid';
+  });
+}
+
+export function consumeRecoveryCode(db: Db, adminId: string, code: string): boolean {
   const norm = normalizeRecoveryCode(code);
   if (norm.length !== 10) return false;
   const res = db.prepare('UPDATE admin_recovery_codes SET used_at = ? WHERE admin_id = ? AND code_hash = ? AND used_at IS NULL').run(now(), adminId, sha256Hex(norm));
@@ -265,7 +331,7 @@ export function confirmTotpEnrolment(db: Db, adminId: string, code: string, nowM
   });
 }
 
-function replaceRecoveryCodes(db: Db, adminId: string): string[] {
+export function replaceRecoveryCodes(db: Db, adminId: string): string[] {
   db.prepare('DELETE FROM admin_recovery_codes WHERE admin_id = ?').run(adminId);
   const codes = generateRecoveryCodes();
   const ins = db.prepare('INSERT INTO admin_recovery_codes (admin_id, code_hash) VALUES (?, ?)');
@@ -280,6 +346,15 @@ export function regenerateRecoveryCodes(db: Db, adminId: string, code: string, n
     const step = verifyTotp(admin.totp_secret, code, { nowMs, minStep: admin.totp_last_step });
     if (step == null) return null;
     db.prepare('UPDATE admins SET totp_last_step = ? WHERE id = ?').run(step, adminId);
+    return replaceRecoveryCodes(db, adminId);
+  });
+}
+
+/** Fresh recovery codes for an account that confirmed itself some other way (a passkey). */
+export function regenerateRecoveryCodesConfirmed(db: Db, adminId: string): string[] | null {
+  return transaction(db, () => {
+    const admin = adminRow(db, 'id', adminId);
+    if (!admin || !hasSecondFactor(toAdmin(admin))) return null;
     return replaceRecoveryCodes(db, adminId);
   });
 }
@@ -304,10 +379,35 @@ export function disableTotp(db: Db, adminId: string, code: string, keepSessionId
   });
 }
 
-/** Operator escape hatch (CLI): removes the second factor without a code and ends all sessions (except `keepSessionId`). */
+/**
+ * Removes TOTP without a code and ends all sessions (except `keepSessionId`). Recovery
+ * codes go with it unless a passkey remains, which they still back up.
+ */
 export function forceDisableTotp(db: Db, adminId: string, keepSessionId?: string): void {
   db.prepare('UPDATE admins SET totp_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL, totp_failed_count = 0, totp_locked_until = NULL WHERE id = ?').run(adminId);
-  db.prepare('DELETE FROM admin_recovery_codes WHERE admin_id = ?').run(adminId);
+  dropRecoveryCodesIfUnused(db, adminId);
+  endSessions(db, adminId, keepSessionId);
+}
+
+/**
+ * Operator escape hatch (CLI, and an administrator resetting someone's account): every
+ * second factor goes — TOTP, passkeys and recovery codes — and every session ends.
+ */
+export function resetSecondFactors(db: Db, adminId: string): void {
+  transaction(db, () => {
+    db.prepare('DELETE FROM admin_passkeys WHERE admin_id = ?').run(adminId);
+    forceDisableTotp(db, adminId);
+  });
+}
+
+/** Recovery codes stand in for a second factor; without any factor left they mean nothing. */
+export function dropRecoveryCodesIfUnused(db: Db, adminId: string): void {
+  const admin = adminRow(db, 'id', adminId);
+  if (admin && !hasSecondFactor(toAdmin(admin))) db.prepare('DELETE FROM admin_recovery_codes WHERE admin_id = ?').run(adminId);
+}
+
+/** Ends every session of the account, or every one but `keepSessionId`. */
+export function endSessions(db: Db, adminId: string, keepSessionId?: string): void {
   if (keepSessionId) db.prepare('DELETE FROM sessions WHERE admin_id = ? AND id_hash != ?').run(adminId, sha256Hex(keepSessionId));
   else db.prepare('DELETE FROM sessions WHERE admin_id = ?').run(adminId);
 }

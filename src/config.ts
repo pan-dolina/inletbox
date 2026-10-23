@@ -39,6 +39,10 @@ export interface Config {
   sessionTtlMs: number;
   /** When true, admins without TOTP must enrol before using the panel. */
   adminRequireTotp: boolean;
+  /** How long a confirmation (or the login itself) covers sensitive actions. */
+  reauthWindowMs: number;
+  /** Offer Device Bound Session Credentials to browsers that support them (HTTPS only). */
+  deviceBoundSessions: boolean;
   cookieSecure: boolean;
   loginRateLimitPer15Min: number;
   tokenFailureRateLimitPer15Min: number;
@@ -180,6 +184,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     cleanupIntervalMs: num(env, 'CLEANUP_INTERVAL_MINUTES', 30) * 60_000,
     sessionTtlMs: num(env, 'SESSION_TTL_HOURS', 12) * 3600_000,
     adminRequireTotp: bool(env, 'ADMIN_REQUIRE_TOTP', false),
+    reauthWindowMs: Math.min(Math.max(num(env, 'REAUTH_WINDOW_MINUTES', 10), 1), 720) * 60_000,
+    deviceBoundSessions: bool(env, 'DEVICE_BOUND_SESSIONS', true),
     cookieSecure: bool(env, 'COOKIE_SECURE', parsed.protocol === 'https:'),
     loginRateLimitPer15Min: num(env, 'LOGIN_RATE_LIMIT_PER_15MIN', 10),
     tokenFailureRateLimitPer15Min: num(env, 'TOKEN_FAILURE_RATE_LIMIT_PER_15MIN', 30),

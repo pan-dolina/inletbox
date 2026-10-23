@@ -6,8 +6,8 @@
 
 | Who | Can | Cannot |
 |---|---|---|
-| **Administrator** (cookie session, optional TOTP) | everything a user can, in **every** case; create, disable and delete accounts, change roles, issue new passwords, remove a lost second factor; assign users to cases; read the audit log | change their own role, disable or delete themselves |
-| **User** (cookie session, optional TOTP) | in the cases they are **assigned** to: edit/close cases; generate and revoke links, set their expiry and limits; inspect metadata; download and delete files; assign other users to the case and unassign them. Create new cases (and are assigned to them) | see or open any other case — it answers `404`, exactly like one that does not exist; unassign themselves; manage accounts; read the audit log |
+| **Administrator** (cookie session, optional second factor) | everything a user can, in **every** case; create, disable and delete accounts, change roles, issue new passwords, remove a lost second factor; assign users to cases; read the audit log | change their own role, disable or delete themselves |
+| **User** (cookie session, optional second factor) | in the cases they are **assigned** to: edit/close cases; generate and revoke links, set their expiry and limits; inspect metadata; download and delete files; assign other users to the case and unassign them. Create new cases (and are assigned to them) | see or open any other case — it answers `404`, exactly like one that does not exist; unassign themselves; manage accounts; read the audit log |
 | **Link holder** (token) | upload files (browser, curl, tus); see the list and status of files uploaded through **that** link | download or preview any file, including their own; delete or overwrite completed files; see files of other links; reach the admin panel |
 
 ### Accounts and roles
@@ -23,8 +23,9 @@ The access rule lives in one function (`canAccessCase` in `src/services/users.ts
 checked on every route that takes a case, link, file or upload id, including tus.
 Role changes, unassignments and disabling take effect on the account's next request, not
 at its next login. The instance always keeps at least one active administrator, and no
-one can change their own account from the list — their password and 2FA are on
-**Security**. `ADMIN_REQUIRE_TOTP` applies to every account, whatever its role.
+one can change their own account from the list — their password, second factors and
+sessions are on **Security**. `ADMIN_REQUIRE_TOTP` applies to every account, whatever its
+role, and is satisfied by an authenticator app or a passkey.
 
 ### Link holders
 
@@ -62,8 +63,43 @@ a finished file can no longer be addressed via `HEAD`/`PATCH`/`DELETE` (`410`).
   a current code, not just the session, and ends every other session. Everything is
   audited. The TOTP secret is stored in clear in the database (as in most implementations):
   protect the database file and its backups.
+- **Passkeys (WebAuthn) as a second factor:** next to the password, on the same footing as
+  TOTP — either one completes the login, and the recovery codes back up both. Implemented on
+  `node:crypto` (`src/webauthn.ts`) with attestation `none`: the browser's own
+  `getPublicKey()` hands over the key as SPKI, so there is no CBOR or certificate chain to
+  parse. Accepted: Ed25519, ES256 (P-256), RS256 (≥ 2048 bits). Each ceremony is bound to
+  `PUBLIC_URL` (origin and RP id hash), answers a one-time 32-byte challenge stored on the
+  session with its purpose and a 5-minute deadline, needs the user-presence flag, and at
+  sign-in a valid signature by the registered key; a signature counter that goes backwards is
+  refused. Up to 10 per account. Adding the first one issues recovery codes. Adding or
+  removing one ends every other session of the account, as TOTP does. The passkey is not a
+  replacement for the password (that was a deliberate choice: account recovery stays as it is).
+- **Re-confirmation before sensitive actions:** downloading a file, issuing a link, managing
+  accounts, and adding or removing a second factor need a confirmation from the last
+  `REAUTH_WINDOW_MINUTES` (default 10). Signing in counts as one. Afterwards the panel asks
+  again: with a passkey or a code from the app/a recovery code, or with the password only for
+  an account that has no second factor. Someone holding nothing but a stolen session cookie
+  can look around, but cannot take files or links out, create accounts, or give themselves a
+  factor of their own. Code confirmations share the login's lockout counter.
 - **Sessions:** random 256-bit id in an `HttpOnly; SameSite=Lax; Secure` (on HTTPS)
   cookie, only its SHA-256 in the database, configurable TTL, new id on every login.
+  **Security** lists every session of the account — device (from the User-Agent), IP,
+  start, last activity, how the second step was passed, and sessions still waiting for it,
+  which means someone has the password — and ends any of them, or all but the current one.
+- **Device-bound sessions (DBSC):** browsers that implement
+  [Device Bound Session Credentials](https://w3c.github.io/webappsec-dbsc/) (Chrome on Windows
+  and macOS, 2026) are offered, once per complete session over HTTPS, to bind the session to
+  a key held in the TPM / Secure Enclave. The session then also needs a second cookie
+  (`<app>_bound`, `Path=/admin`) that lives 10 minutes; the browser renews it at
+  `/admin/dbsc/refresh` by signing a fresh server challenge (ES256 or RS256, `dbsc+jwt`,
+  verified on `node:crypto`). A copied session cookie stops working once the bound cookie it
+  was stolen with expires, and the key cannot be copied off the device. A bound session
+  without a current bound cookie is treated as signed out (fail closed). The binding lives
+  in its own table, rotates the cookie and the challenge on every refresh, accepts the
+  previous cookie until it would have expired anyway (requests in flight), never redirects,
+  and ends with the session (`401`, `continue: false`). Browsers without DBSC keep ordinary
+  sessions, protected by the re-confirmation above. `DEVICE_BOUND_SESSIONS=false` turns the
+  offer off.
 - **CSRF:** SameSite=Lax + `Origin`/`Sec-Fetch-Site` checks + a per-session synchroniser
   token in every form.
 - **Link tokens:** 256 bits from a CSPRNG, stored only as SHA-256 (+ a 6-character hint

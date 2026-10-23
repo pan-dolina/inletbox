@@ -8,8 +8,15 @@ import { log } from '../log.js';
 import { audit, listAudit } from '../services/audit.js';
 import {
   authenticate, beginTotpEnrolment, changeAdminPassword, confirmTotpEnrolment, createSession, destroyOtherSessions, destroySession,
-  disableTotp, MAX_TOTP_ATTEMPTS, pendingTotpSecret, recordLogin, regenerateRecoveryCodes, remainingRecoveryCodes, totpLockedUntil, verifySessionTotp,
+  disableTotp, hasSecondFactor, markConfirmed, MAX_TOTP_ATTEMPTS, pendingTotpSecret, recordLogin, regenerateRecoveryCodes,
+  regenerateRecoveryCodesConfirmed, remainingRecoveryCodes, totpLockedUntil, verifyConfirmCode, verifySessionTotp, type Admin,
 } from '../services/auth.js';
+import {
+  beginCeremony, credentialIds, listPasskeys, MAX_PASSKEYS, registerPasskey, removePasskey, verifyPasskeyConfirm, verifyPasskeyLogin, CEREMONY_TTL_MS,
+} from '../services/passkeys.js';
+import { listSessions, offerBinding, refreshBinding, registerBinding, revokeSession, type IssuedCookie } from '../services/sessions.js';
+import { DbscError, proofFromHeader } from '../dbsc.js';
+import { WebAuthnError, type Expected } from '../webauthn.js';
 import {
   addCaseMember, assignableUsers, canAccessCase, caseMembers, createUser, deleteUser, getUser, isRole, listUsers, removeCaseMember,
   resetUserPassword, resetUserTotp, setUserDisabled, setUserRole, UserError, type UserSummary,
@@ -22,10 +29,10 @@ import { StorageNotFoundError } from '../storage/index.js';
 import { otpauthUri } from '../totp.js';
 import { t, type MessageKey } from '../i18n.js';
 import type { AppContext } from './context.js';
-import { SESSION_COOKIE } from './context.js';
-import { csrfProtect, loginLimiter, requireAdmin, sessionCookie } from './middleware.js';
+import { BOUND_COOKIE, SESSION_COOKIE } from './context.js';
+import { csrfProtect, loginLimiter, requireAdmin, requireConfirmed, safeNext, sessionCookie } from './middleware.js';
 import { adminNav, auditPage, casePage, casesPage, errorPage, usersPage, type UsersPageData, loginPage, type AdminViewContext } from './views/admin.js';
-import { securityPage, totpLoginPage, type SecurityPageData } from './views/security.js';
+import { confirmPage, securityPage, totpLoginPage, type SecurityPageData } from './views/security.js';
 
 function viewCtx(req: Request): AdminViewContext {
   const { admin } = req.session!;
@@ -58,7 +65,18 @@ function validId(id: string | undefined): string | null {
 }
 
 function clearSessionCookie(res: Response): void {
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+  res.setHeader('Set-Cookie', [`${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`, `${BOUND_COOKIE}=; Path=/admin; HttpOnly; SameSite=Lax; Max-Age=0`]);
+}
+
+/** Recorded with the session and shown in the account's session list. */
+function sessionMeta(req: Request): { ip?: string; userAgent?: string } {
+  return { ip: req.ip, userAgent: req.headers['user-agent'] };
+}
+
+/** A JSON answer for passkey.js: where to go next, or what went wrong. */
+function sendJson(res: Response, status: number, body: { redirect?: string; error?: string } & Record<string, unknown>): void {
+  res.status(status).type('application/json').setHeader('Cache-Control', 'no-store');
+  res.send(JSON.stringify(body));
 }
 
 export function adminRouter(ctx: AppContext): Router {
@@ -66,6 +84,60 @@ export function adminRouter(ctx: AppContext): Router {
   r.use(urlencoded({ extended: false, limit: '64kb' }));
   // One budget for password and second-factor failures.
   const loginFailures = loginLimiter(ctx);
+
+  /** What every WebAuthn ceremony must be bound to: this site, as PUBLIC_URL names it. */
+  const publicUrl = new URL(ctx.cfg.publicUrl);
+  const rp: Omit<Expected, 'challenge'> = { origin: publicUrl.origin, rpId: publicUrl.hostname };
+
+  const boundCookie = (c: IssuedCookie): string =>
+    `${BOUND_COOKIE}=${c.cookie}; Path=/admin; HttpOnly; SameSite=Lax; Max-Age=${c.maxAgeSec}${ctx.cfg.cookieSecure ? '; Secure' : ''}`;
+  /** The session config the browser keeps for a bound session (DBSC). */
+  const dbscConfig = (bindingId: string) => ({
+    session_identifier: bindingId,
+    refresh_url: '/admin/dbsc/refresh',
+    scope: { origin: publicUrl.origin, include_site: false },
+    credentials: [{ type: 'cookie', name: BOUND_COOKIE, attributes: `Path=/admin; HttpOnly; SameSite=Lax${ctx.cfg.cookieSecure ? '; Secure' : ''}` }],
+  });
+
+  // ---- device-bound sessions (DBSC) ---------------------------------------
+  // The browser calls these on its own. They carry no CSRF token (a signature over our
+  // challenge stands in for it) and never redirect: a redirect here can stall the
+  // navigation the browser is holding back.
+  r.post('/dbsc/register', (req, res) => {
+    const jwt = proofFromHeader(req.headers['secure-session-response']);
+    if (!req.session?.totpVerified || !req.sessionId || !jwt) return sendJson(res, 400, { error: 'registration refused' });
+    try {
+      const issued = registerBinding(ctx.db, req.sessionId, jwt);
+      audit(ctx.db, { actorType: 'admin', actorId: req.session.admin.id, action: 'admin.session_bound', ip: req.ip });
+      res.setHeader('Set-Cookie', boundCookie(issued));
+      sendJson(res, 200, dbscConfig(issued.bindingId));
+    } catch (err) {
+      if (!(err instanceof DbscError)) throw err;
+      log.warn('dbsc registration refused', { reason: err.message });
+      sendJson(res, 400, { error: 'registration refused' });
+    }
+  });
+
+  r.post('/dbsc/refresh', (req, res) => {
+    const bindingId = String(req.headers['sec-secure-session-id'] ?? '').replace(/^"|"$/g, '');
+    if (!ID_RE.test(bindingId)) return sendJson(res, 400, { error: 'unknown session' });
+    let result;
+    try {
+      result = refreshBinding(ctx.db, bindingId, proofFromHeader(req.headers['secure-session-response']));
+    } catch (err) {
+      if (!(err instanceof DbscError)) throw err;
+      log.warn('dbsc refresh refused', { reason: err.message });
+      return sendJson(res, 401, { error: 'refresh refused' });
+    }
+    if (result.status === 'ended') return sendJson(res, 401, { continue: false });
+    if (result.status === 'challenge') {
+      res.setHeader('Secure-Session-Challenge', `"${result.challenge}";id="${result.bindingId}"`);
+      return sendJson(res, 403, { error: 'challenge required' });
+    }
+    res.setHeader('Set-Cookie', boundCookie(result.issued));
+    res.setHeader('Secure-Session-Challenge', `"${result.issued.nextChallenge}";id="${result.issued.bindingId}"`);
+    sendJson(res, 200, dbscConfig(result.issued.bindingId));
+  });
 
   // ---- login / logout ----------------------------------------------------
   r.get('/login', (req, res) => {
@@ -84,13 +156,15 @@ export function adminRouter(ctx: AppContext): Router {
       return;
     }
     // A fresh session id on every login (no fixation); it is only "pending" until the second factor passes.
-    const { sessionId } = createSession(ctx.db, admin, ctx.cfg.sessionTtlMs);
+    const { sessionId } = createSession(ctx.db, admin, ctx.cfg.sessionTtlMs, sessionMeta(req));
     res.setHeader('Set-Cookie', sessionCookie(ctx, sessionId, Math.floor(ctx.cfg.sessionTtlMs / 1000)));
-    if (admin.totp_enabled) {
+    if (hasSecondFactor(admin)) {
       audit(ctx.db, { actorType: 'admin', actorId: admin.id, action: 'admin.login_password', ip: req.ip });
       res.redirect(303, '/admin/totp');
       return;
     }
+    // Signing in is itself a confirmation, for as long as a confirmation lasts.
+    markConfirmed(ctx.db, sessionId, ctx.cfg.reauthWindowMs);
     recordLogin(ctx.db, admin.id);
     audit(ctx.db, { actorType: 'admin', actorId: admin.id, action: 'admin.login', ip: req.ip });
     res.redirect(303, (ctx.cfg.adminRequireTotp || admin.must_change_password) ? '/admin/security' : '/admin');
@@ -108,10 +182,49 @@ export function adminRouter(ctx: AppContext): Router {
   });
 
   // ---- second factor -------------------------------------------------------
+  /** What the second step offers this account: a passkey button, the code form, or both. */
+  function secondStep(admin: Admin) {
+    return { passkey: admin.passkeys > 0, totp: admin.totp_enabled, codes: admin.totp_enabled || remainingRecoveryCodes(ctx.db, admin.id) > 0 };
+  }
+
+  /** A complete sign-in: the new privileged cookie, a fresh confirmation, the login on record. */
+  function signedIn(req: Request, res: Response, sessionId: string, factor: string): string {
+    const { admin } = req.session!;
+    markConfirmed(ctx.db, sessionId, ctx.cfg.reauthWindowMs);
+    recordLogin(ctx.db, admin.id);
+    audit(ctx.db, { actorType: 'admin', actorId: admin.id, action: 'admin.login', ip: req.ip, details: { second_factor: factor } });
+    res.setHeader('Set-Cookie', sessionCookie(ctx, sessionId, Math.floor(ctx.cfg.sessionTtlMs / 1000)));
+    return admin.must_change_password ? '/admin/security' : '/admin';
+  }
+
   r.get('/totp', (req, res) => {
     if (req.session!.totpVerified) return res.redirect('/admin');
     const lockedUntil = totpLockedUntil(ctx.db, req.session!.admin.id);
-    res.type('html').send(totpLoginPage(req.lang, { csrfToken: req.session!.csrfToken, lockedUntil: lockedUntil ?? undefined }));
+    res.type('html').send(totpLoginPage(req.lang, { csrfToken: req.session!.csrfToken, lockedUntil: lockedUntil ?? undefined, ...secondStep(req.session!.admin) }));
+  });
+
+  r.post('/webauthn/login/options', (req, res) => {
+    const { admin, totpVerified } = req.session!;
+    if (totpVerified) return sendJson(res, 200, { redirect: '/admin' });
+    const allow = credentialIds(ctx.db, admin.id);
+    if (allow.length === 0) return sendJson(res, 400, { error: t(req.lang, 'passkey.failed') });
+    const challenge = beginCeremony(ctx.db, req.sessionId!, 'login');
+    sendJson(res, 200, { challenge, rpId: rp.rpId, allow, timeout: CEREMONY_TTL_MS });
+  });
+
+  r.post('/webauthn/login', loginFailures, (req, res) => {
+    const session = req.session!;
+    if (session.totpVerified) return sendJson(res, 200, { redirect: '/admin' });
+    try {
+      const fresh = verifyPasskeyLogin(ctx.db, req.sessionId!, session.admin, ctx.cfg.sessionTtlMs, field(req, 'credential_id'), {
+        clientDataJSON: field(req, 'client_data'), authenticatorData: field(req, 'authenticator_data'), signature: field(req, 'signature'),
+      }, rp);
+      sendJson(res, 200, { redirect: signedIn(req, res, fresh.sessionId, 'passkey') });
+    } catch (err) {
+      if (!(err instanceof WebAuthnError)) throw err;
+      audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.passkey_failed', ip: req.ip, details: { reason: err.message } });
+      sendJson(res, 401, { error: t(req.lang, 'passkey.failed') });
+    }
   });
 
   r.post('/totp', loginFailures, (req, res) => {
@@ -119,11 +232,8 @@ export function adminRouter(ctx: AppContext): Router {
     if (session.totpVerified) return res.redirect(303, '/admin');
     const result = verifySessionTotp(ctx.db, req.sessionId!, field(req, 'code'), ctx.cfg.sessionTtlMs);
     if (result.status === 'ok') {
-      recordLogin(ctx.db, session.admin.id);
-      audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.login', ip: req.ip, details: { second_factor: true } });
       // Fresh session id for the privileged session.
-      res.setHeader('Set-Cookie', sessionCookie(ctx, result.sessionId, Math.floor(ctx.cfg.sessionTtlMs / 1000)));
-      res.redirect(303, session.admin.must_change_password ? '/admin/security' : '/admin');
+      res.redirect(303, signedIn(req, res, result.sessionId, result.factor));
       return;
     }
     if (result.status === 'locked') {
@@ -133,13 +243,96 @@ export function adminRouter(ctx: AppContext): Router {
       return;
     }
     audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.totp_failed', ip: req.ip });
-    res.status(401).type('html').send(totpLoginPage(req.lang, { csrfToken: session.csrfToken, error: t(req.lang, 'totp.invalid'), attemptsLeft: MAX_TOTP_ATTEMPTS - session.totpAttempts - 1 }));
+    res.status(401).type('html').send(totpLoginPage(req.lang, { csrfToken: session.csrfToken, error: t(req.lang, 'totp.invalid'), attemptsLeft: MAX_TOTP_ATTEMPTS - session.totpAttempts - 1, ...secondStep(session.admin) }));
   });
 
   // From here on the second factor must have been passed.
   r.use(requireAdmin({ verified: true }));
 
+  // A complete session is offered device binding once, on the first page it loads
+  // (not on the login response itself: after a passkey sign-in that is a fetch, and
+  // the browser only acts on the header reliably for documents).
+  r.use((req, res, next) => {
+    if (ctx.cfg.deviceBoundSessions && ctx.cfg.cookieSecure && req.method === 'GET' && req.headers['sec-fetch-dest'] === 'document') {
+      const challenge = offerBinding(ctx.db, req.sessionId!);
+      if (challenge) res.setHeader('Secure-Session-Registration', `(ES256 RS256);path="/admin/dbsc/register";challenge="${challenge}"`);
+    }
+    next();
+  });
+
+  // ---- confirmation of sensitive actions -----------------------------------
+  function renderConfirm(req: Request, res: Response, error?: string, status = 200): void {
+    const { admin } = req.session!;
+    const step = secondStep(admin);
+    res.status(status).type('html').send(confirmPage({
+      lang: req.lang, nav: adminNav(viewCtx(req)), csrfToken: req.session!.csrfToken,
+      next: safeNext(req.query.next ?? field(req, 'next')), minutes: Math.round(ctx.cfg.reauthWindowMs / 60_000),
+      passkey: step.passkey, codes: step.codes, password: !hasSecondFactor(admin), error,
+    }));
+  }
+
+  function confirmed(req: Request, method: string): void {
+    markConfirmed(ctx.db, req.sessionId!, ctx.cfg.reauthWindowMs);
+    audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'admin.confirmed', ip: req.ip, details: { method } });
+  }
+
+  r.get('/confirm', (req, res) => renderConfirm(req, res));
+
+  r.post('/confirm/code', loginFailures, (req, res) => {
+    const result = verifyConfirmCode(ctx.db, req.session!.admin.id, field(req, 'code'));
+    if (result !== 'ok') {
+      audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'admin.confirm_failed', ip: req.ip, details: { method: 'code' } });
+      return renderConfirm(req, res, t(req.lang, result === 'locked' ? 'confirm.locked' : 'confirm.invalid'), 401);
+    }
+    confirmed(req, 'code');
+    res.redirect(303, safeNext(field(req, 'next')));
+  });
+
+  // Only an account without a second factor confirms with its password: anyone else
+  // has something a cookie thief does not, and must use it.
+  r.post('/confirm/password', loginFailures, (req, res) => {
+    const { admin } = req.session!;
+    if (hasSecondFactor(admin) || !authenticate(ctx.db, admin.username, field(req, 'password'))) {
+      audit(ctx.db, { actorType: 'admin', actorId: admin.id, action: 'admin.confirm_failed', ip: req.ip, details: { method: 'password' } });
+      return renderConfirm(req, res, t(req.lang, 'confirm.invalid'), 401);
+    }
+    confirmed(req, 'password');
+    res.redirect(303, safeNext(field(req, 'next')));
+  });
+
+  r.post('/webauthn/confirm/options', (req, res) => {
+    const allow = credentialIds(ctx.db, req.session!.admin.id);
+    if (allow.length === 0) return sendJson(res, 400, { error: t(req.lang, 'passkey.failed') });
+    sendJson(res, 200, { challenge: beginCeremony(ctx.db, req.sessionId!, 'confirm'), rpId: rp.rpId, allow, timeout: CEREMONY_TTL_MS });
+  });
+
+  r.post('/confirm/passkey', loginFailures, (req, res) => {
+    try {
+      verifyPasskeyConfirm(ctx.db, req.sessionId!, req.session!.admin.id, field(req, 'credential_id'), {
+        clientDataJSON: field(req, 'client_data'), authenticatorData: field(req, 'authenticator_data'), signature: field(req, 'signature'),
+      }, rp);
+    } catch (err) {
+      if (!(err instanceof WebAuthnError)) throw err;
+      audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'admin.confirm_failed', ip: req.ip, details: { method: 'passkey', reason: err.message } });
+      return sendJson(res, 401, { error: t(req.lang, 'passkey.failed') });
+    }
+    confirmed(req, 'passkey');
+    sendJson(res, 200, { redirect: safeNext(req.query.next) });
+  });
+
+  const backToSecurity = () => '/admin/security';
+
   // ---- security settings ------------------------------------------------
+  // A passkey is added by a fetch, after which the page navigates: the outcome (and the
+  // recovery codes, for a first factor) waits here for that one page view. In memory on
+  // purpose — codes must not be written anywhere — and gone after a minute.
+  const flashes = new Map<string, { ok?: string; recoveryCodes?: string[]; at?: number }>();
+  function takeFlash(sessionId: string): Partial<SecurityPageData> | null {
+    const f = flashes.get(sessionId);
+    flashes.delete(sessionId);
+    return f && Date.now() - (f.at ?? 0) < 60_000 ? { ok: f.ok, recoveryCodes: f.recoveryCodes } : null;
+  }
+
   async function renderSecurity(req: Request, res: Response, extra: Partial<SecurityPageData> = {}, status = 200): Promise<void> {
     const session = req.session!;
     const pending = session.admin.totp_enabled ? null : pendingTotpSecret(ctx.db, session.admin.id);
@@ -152,13 +345,17 @@ export function adminRouter(ctx: AppContext): Router {
     res.status(status).type('html').send(securityPage({
       lang: req.lang, csrfToken: session.csrfToken, username: session.admin.username, nav: adminNav(viewCtx(req)),
       totpEnabled: session.admin.totp_enabled, totpRequired: ctx.cfg.adminRequireTotp, issuer: ctx.cfg.brand.name,
-      recoveryLeft: session.admin.totp_enabled ? remainingRecoveryCodes(ctx.db, session.admin.id) : 0,
+      recoveryLeft: hasSecondFactor(session.admin) ? remainingRecoveryCodes(ctx.db, session.admin.id) : 0,
+      passkeys: listPasskeys(ctx.db, session.admin.id), sessions: listSessions(ctx.db, session.admin.id, req.sessionId!),
       mustChangePassword: session.admin.must_change_password,
       enrol, ...extra,
     }));
   }
 
-  r.get('/security', (req, res, next) => { renderSecurity(req, res).catch(next); });
+  r.get('/security', (req, res, next) => {
+    const flash = takeFlash(req.sessionId!);
+    renderSecurity(req, res, flash ?? {}).catch(next);
+  });
 
   r.post('/security/password', (req, res, next) => {
     const session = req.session!;
@@ -182,7 +379,7 @@ export function adminRouter(ctx: AppContext): Router {
     renderSecurity(req, res, { ok: t(req.lang, 'security.password.changed') }).catch(next);
   });
 
-  r.post('/security/totp/begin', (req, res, next) => {
+  r.post('/security/totp/begin', requireConfirmed(backToSecurity), (req, res, next) => {
     try {
       beginTotpEnrolment(ctx.db, req.session!.admin.id);
       renderSecurity(req, res).catch(next);
@@ -218,7 +415,7 @@ export function adminRouter(ctx: AppContext): Router {
 
   r.post('/security/totp/disable', (req, res, next) => {
     const session = req.session!;
-    if (ctx.cfg.adminRequireTotp) {
+    if (ctx.cfg.adminRequireTotp && session.admin.passkeys === 0) {
       renderSecurity(req, res, { error: t(req.lang, 'security.msg.required') }, 400).catch(next);
       return;
     }
@@ -232,11 +429,87 @@ export function adminRouter(ctx: AppContext): Router {
     renderSecurity(req, res, { ok: t(req.lang, 'security.msg.disabled') }).catch(next);
   });
 
+  // ---- passkeys ----------------------------------------------------------------
+  // Adding one is gated like enabling TOTP: whoever holds only a cookie must not be
+  // able to give themselves a factor of their own.
+  r.post('/security/passkeys/options', (req, res) => {
+    const { admin, confirmedUntil } = req.session!;
+    if (!confirmedUntil || confirmedUntil <= new Date().toISOString()) return sendJson(res, 200, { redirect: '/admin/confirm?next=%2Fadmin%2Fsecurity' });
+    const exclude = credentialIds(ctx.db, admin.id);
+    if (exclude.length >= MAX_PASSKEYS) return sendJson(res, 400, { error: t(req.lang, 'passkeys.limit', { n: MAX_PASSKEYS }) });
+    const challenge = beginCeremony(ctx.db, req.sessionId!, 'register');
+    sendJson(res, 200, {
+      challenge, rpId: rp.rpId, rpName: ctx.cfg.brand.name, userId: Buffer.from(admin.id, 'utf8').toString('base64url'),
+      userName: admin.username, exclude, timeout: CEREMONY_TTL_MS,
+    });
+  });
+
+  r.post('/security/passkeys', requireConfirmed(backToSecurity), (req, res) => {
+    const session = req.session!;
+    const wasFirst = !hasSecondFactor(session.admin);
+    try {
+      const pk = registerPasskey(ctx.db, req.sessionId!, session.admin.id, field(req, 'name'), {
+        clientDataJSON: field(req, 'client_data'), authenticatorData: field(req, 'authenticator_data'), publicKey: field(req, 'public_key'),
+        algorithm: Number(field(req, 'algorithm')), credentialId: field(req, 'credential_id'),
+      }, rp);
+      // Other sessions did not prove this factor: end them, as when TOTP is enabled.
+      destroyOtherSessions(ctx.db, session.admin.id, req.sessionId!);
+      audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.passkey_added', ip: req.ip, details: { passkey: pk.id, name: pk.name } });
+      // The first factor of the account comes with recovery codes, shown once.
+      const codes = wasFirst ? regenerateRecoveryCodesConfirmed(ctx.db, session.admin.id) : null;
+      for (const [k, v] of flashes) if (Date.now() - (v.at ?? 0) >= 60_000) flashes.delete(k);
+      flashes.set(req.sessionId!, { ok: t(req.lang, 'passkeys.added', { name: pk.name }), recoveryCodes: codes ?? undefined, at: Date.now() });
+      sendJson(res, 200, { redirect: '/admin/security' });
+    } catch (err) {
+      if (!(err instanceof WebAuthnError)) throw err;
+      audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.passkey_failed', ip: req.ip, details: { context: 'register', reason: err.message } });
+      const key = err.message === 'too many passkeys' ? 'passkeys.limit' : err.message === 'passkey already registered' ? 'passkeys.duplicate' : 'passkey.failed';
+      sendJson(res, 400, { error: t(req.lang, key, { n: MAX_PASSKEYS }) });
+    }
+  });
+
+  r.post('/security/passkeys/:id/remove', requireConfirmed(backToSecurity), (req, res, next) => {
+    const session = req.session!;
+    const id = validId(param(req, 'id'));
+    if (ctx.cfg.adminRequireTotp && !session.admin.totp_enabled && session.admin.passkeys <= 1) {
+      renderSecurity(req, res, { error: t(req.lang, 'passkeys.last_required') }, 400).catch(next);
+      return;
+    }
+    const pk = id ? removePasskey(ctx.db, session.admin.id, id, req.sessionId!) : null;
+    if (!pk) return sendError(req, res, 'error.not_found.title', 'error.not_found.title');
+    session.admin.passkeys -= 1;
+    audit(ctx.db, { actorType: 'admin', actorId: session.admin.id, action: 'admin.passkey_removed', ip: req.ip, details: { passkey: pk.id, name: pk.name } });
+    renderSecurity(req, res, { ok: t(req.lang, 'passkeys.removed', { name: pk.name }) }).catch(next);
+  });
+
+  r.post('/security/recovery/regenerate', requireConfirmed(backToSecurity), (req, res, next) => {
+    const codes = regenerateRecoveryCodesConfirmed(ctx.db, req.session!.admin.id);
+    if (!codes) return renderSecurity(req, res, { error: t(req.lang, 'security.msg.invalid_code') }, 400).catch(next);
+    audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'admin.recovery_codes_regenerated', ip: req.ip });
+    renderSecurity(req, res, { ok: t(req.lang, 'security.msg.regenerated'), recoveryCodes: codes }).catch(next);
+  });
+
+  // ---- sessions -------------------------------------------------------------------
+  r.post('/security/sessions/revoke-others', (req, res, next) => {
+    destroyOtherSessions(ctx.db, req.session!.admin.id, req.sessionId!);
+    audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'admin.sessions_revoked', ip: req.ip, details: { scope: 'others' } });
+    renderSecurity(req, res, { ok: t(req.lang, 'sessions.revoked_others') }).catch(next);
+  });
+
+  r.post('/security/sessions/:id/revoke', (req, res, next) => {
+    const id = param(req, 'id') ?? '';
+    if (!/^s_[0-9a-zA-Z_-]{16,32}$/.test(id) || id === req.session!.publicId || !revokeSession(ctx.db, req.session!.admin.id, id)) {
+      return sendError(req, res, 'error.not_found.title', 'error.not_found.title');
+    }
+    audit(ctx.db, { actorType: 'admin', actorId: req.session!.admin.id, action: 'admin.sessions_revoked', ip: req.ip, details: { session: id } });
+    renderSecurity(req, res, { ok: t(req.lang, 'sessions.revoked') }).catch(next);
+  });
+
   // With ADMIN_REQUIRE_TOTP, accounts without a second factor may only reach the
   // security page; so may an account still holding a password an administrator issued.
   r.use((req, res, next) => {
     const { admin } = req.session!;
-    const missing = admin.must_change_password ? 'Password change required' : ctx.cfg.adminRequireTotp && !admin.totp_enabled ? 'TOTP enrolment required' : null;
+    const missing = admin.must_change_password ? 'Password change required' : ctx.cfg.adminRequireTotp && !hasSecondFactor(admin) ? 'Second factor required' : null;
     if (missing) {
       if (req.method === 'GET') return res.redirect(302, '/admin/security');
       res.status(403).type('text/plain').send(missing);
@@ -318,7 +591,9 @@ export function adminRouter(ctx: AppContext): Router {
   });
 
   // ---- links -------------------------------------------------------------
-  r.post('/cases/:id/links', (req, res) => {
+  // Issuing a link hands out a credential, so it needs a recent confirmation.
+  const backToCase = (req: Request) => `/admin/cases/${validId(param(req, 'id')) ?? ''}`;
+  r.post('/cases/:id/links', requireConfirmed(backToCase), (req, res) => {
     const id = validId(param(req, 'id'));
     if (!id) return renderCase(req, res, '');
     const c = caseFor(req, id);
@@ -361,7 +636,7 @@ export function adminRouter(ctx: AppContext): Router {
   });
 
   // ---- files -------------------------------------------------------------
-  r.get('/files/:id/download', async (req, res) => {
+  r.get('/files/:id/download', requireConfirmed(() => '/admin'), async (req, res) => {
     const id = validId(param(req, 'id'));
     const file = id ? getFile(ctx.db, id) : null;
     if (!file || file.status !== 'complete' || !caseFor(req, file.case_id)) return sendError(req, res, 'error.not_found.title', 'error.file_missing');
@@ -439,7 +714,8 @@ export function adminRouter(ctx: AppContext): Router {
 
   r.get('/users', adminsOnly, (req, res) => renderUsers(req, res));
 
-  r.post('/users', adminsOnly, (req, res) => {
+  const backToUsers = () => '/admin/users';
+  r.post('/users', adminsOnly, requireConfirmed(backToUsers), (req, res) => {
     const role = field(req, 'role');
     try {
       const { user, password } = createUser(ctx.db, { username: field(req, 'username'), role: isRole(role) ? role : 'user' });
@@ -453,7 +729,7 @@ export function adminRouter(ctx: AppContext): Router {
 
   /** One account action: runs `fn`, audits it, and redraws the list with the outcome. */
   function userAction(path: string, action: string, fn: (req: Request, actorId: string, id: string) => { user: UserSummary; ok: string; details?: Record<string, unknown>; issued?: UsersPageData['issued'] }) {
-    r.post(`/users/:id/${path}`, adminsOnly, (req, res) => {
+    r.post(`/users/:id/${path}`, adminsOnly, requireConfirmed(backToUsers), (req, res) => {
       const id = validId(param(req, 'id'));
       if (!id) return renderUsers(req, res, { error: t(req.lang, 'users.missing') }, 404);
       try {

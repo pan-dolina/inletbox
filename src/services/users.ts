@@ -2,7 +2,7 @@ import type { Db } from '../db.js';
 import { now, transaction } from '../db.js';
 import { hashPassword, newTempPassword } from '../crypto.js';
 import type { MessageKey } from '../i18n.js';
-import { createAdmin, findAdminByUsername, forceDisableTotp, isValidUsername, ROLES, type Admin, type Role } from './auth.js';
+import { createAdmin, findAdminByUsername, isValidUsername, resetSecondFactors, ROLES, type Admin, type Role } from './auth.js';
 
 /**
  * Accounts and who may work on which case.
@@ -33,6 +33,7 @@ export interface UserSummary {
   last_login_at: string | null;
   disabled_at: string | null;
   must_change_password: boolean;
+  /** Has a second factor: an authenticator app or a passkey (the name predates passkeys). */
   totp_enabled: boolean;
   case_count: number;
 }
@@ -49,7 +50,8 @@ export function isRole(v: unknown): v is Role {
 export function listUsers(db: Db): UserSummary[] {
   const rows = db.prepare(
     `SELECT a.id, a.username, a.role, a.created_at, a.last_login_at, a.disabled_at, a.must_change_password,
-            a.totp_enabled_at IS NOT NULL AS totp_enabled,
+            -- 'Two-factor' in the list: an authenticator app or a passkey, either counts.
+            (a.totp_enabled_at IS NOT NULL OR EXISTS (SELECT 1 FROM admin_passkeys p WHERE p.admin_id = a.id)) AS totp_enabled,
             (SELECT COUNT(*) FROM case_members m WHERE m.admin_id = a.id) AS case_count
      FROM admins a ORDER BY a.disabled_at IS NOT NULL, a.role, a.username COLLATE NOCASE`,
   ).all() as Array<Omit<UserSummary, 'must_change_password' | 'totp_enabled'> & { must_change_password: number; totp_enabled: number }>;
@@ -119,10 +121,10 @@ export function resetUserPassword(db: Db, actorId: string, id: string): { user: 
   });
 }
 
-/** For a lost authenticator: the second factor goes, and the owner enrols again after signing in. */
+/** For a lost device: every second factor (TOTP, passkeys, recovery codes) goes, and the owner sets one up again after signing in. */
 export function resetUserTotp(db: Db, actorId: string, id: string): UserSummary {
   const user = requireUser(db, actorId, id);
-  forceDisableTotp(db, id);
+  resetSecondFactors(db, id);
   return user;
 }
 

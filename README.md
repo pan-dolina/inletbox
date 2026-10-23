@@ -49,7 +49,8 @@ previewed, and there are no public download links.
 | **Uploads** | Drag and drop in the browser; `curl -T`; a resumable shell script; resumable uploads ([tus](https://tus.io)) on both storage backends |
 | **Links** | One link per recipient, each with its own expiry, revocation, maximum file size, file count and total quota; quotas hold under concurrent uploads |
 | **Accounts** | `admin` and `user` roles, users assigned per case, generated temporary passwords, disable or delete accounts |
-| **Sign-in** | Passwords hashed with scrypt; TOTP second factor with recovery codes, can be required for everyone |
+| **Sign-in** | Passwords hashed with scrypt; a passkey or an authenticator app as the second factor, with recovery codes, can be required for everyone; sensitive actions ask for a fresh confirmation |
+| **Sessions** | List and end your own sessions; bound to the device's key in browsers that support it ([DBSC](https://w3c.github.io/webappsec-dbsc/)), so a copied cookie stops working within minutes |
 | **Storage** | Local disk or any S3-compatible bucket (AWS, MinIO, …); incomplete uploads and orphaned files cleaned up automatically |
 | **Audit** | Logins, link activity, uploads, downloads and deletions are logged with the client IP |
 | **Interface** | All 24 official EU languages, light and dark theme, your own name, logo and colours |
