@@ -10,6 +10,48 @@ The section for a version is what ends up in its
 reads it from this file, refuses to publish a tag that has no section here, and rewrites
 a published release's notes whenever its section changes on `main`.
 
+## [0.7.0] - 2026-10-23
+
+### Added
+
+- **Passkeys as a second factor.** Under **Security** an account can add passkeys (kept by
+  the device, a password manager or a security key; up to 10). After the password, a passkey
+  completes the login just like a code from an authenticator app, and the two can be used
+  side by side. The first second factor an account adds comes with 8 recovery codes, which
+  now also stand in for a lost passkey. Passkeys are verified on `node:crypto` alone, with no
+  new dependency. `ADMIN_REQUIRE_TOTP` is now satisfied by a passkey too. The passkey does not
+  replace the password.
+- **Re-confirmation before sensitive actions.** Downloading a file, issuing an upload link, managing accounts, and adding or removing a
+  second factor need a sign-in or a confirmation
+  from the last `REAUTH_WINDOW_MINUTES` (default 10). The panel then asks for a passkey or a
+  code (from the app, or a recovery code); an account with no second factor confirms with its
+  password. A stolen session cookie alone can look around but can no longer take data out or
+  give itself a factor of its own.
+- **Your sessions.** **Security** lists every session of the account — device, IP address,
+  when it started and was last active, how its second step was passed — including sessions
+  that got past the password but not the second step. Any of them can be logged out, or all
+  but the current one.
+- **Device-bound sessions** in browsers that support
+  [DBSC](https://w3c.github.io/webappsec-dbsc/) (Chrome on Windows and macOS). Over HTTPS the
+  session is bound to a key the device keeps in its TPM or Secure Enclave, and a second,
+  10-minute cookie is renewed by proving that key. A copied session cookie stops working
+  within minutes. Other browsers keep ordinary sessions. `DEVICE_BOUND_SESSIONS=false` turns
+  it off.
+
+### Changed
+
+- `disable-totp` (CLI) and **Users → Reset 2FA** now remove every second factor of
+  the account: the authenticator app, passkeys and recovery codes.
+
+### Upgrading
+
+- Migration `005_session_security.sql` adds the passkey and session-binding tables and new session
+  columns. It runs on start-up. Sessions from before the upgrade keep working, but
+  their first sensitive action asks for a confirmation.
+- New settings, both optional: `REAUTH_WINDOW_MINUTES` and `DEVICE_BOUND_SESSIONS`.
+- Passkeys are bound to the host name in `PUBLIC_URL`: if you change it later, the
+  passkeys registered under the old name stop working and have to be added again.
+
 ## [0.6.3] - 2026-10-19
 
 ### Changed
@@ -227,6 +269,7 @@ First release.
   Docker Compose deployment.
 - Apache-2.0.
 
+[0.7.0]: https://github.com/pan-dolina/inletbox/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/pan-dolina/inletbox/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/pan-dolina/inletbox/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/pan-dolina/inletbox/compare/v0.6.0...v0.6.1
