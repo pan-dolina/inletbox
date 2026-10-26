@@ -10,6 +10,22 @@ The section for a version is what ends up in its
 reads it from this file, refuses to publish a tag that has no section here, and rewrites
 a published release's notes whenever its section changes on `main`.
 
+## [0.7.1] - 2026-10-26
+
+### Security
+
+- `body-parser` 2.4.0 ([GHSA-27r3-jxmh-p828](https://github.com/advisories/GHSA-27r3-jxmh-p828),
+  high): a compressed request body followed by trailing bytes could tie up the server. It
+  parses every form the panel receives, through Express.
+- `ip-address` 10.7.5 ([GHSA-rxp7-6hxx-x8q5](https://github.com/advisories/GHSA-rxp7-6hxx-x8q5),
+  moderate): a long crafted IPv6 address could stall the process. It is used by the rate
+  limiter on every request.
+
+### Changed
+
+- Dependency updates: the AWS SDK to 3.1156 and tus (`@tus/server` 2.4.6, `@tus/s3-store`
+  2.0.8). Nothing changes for operators, link holders or their clients.
+
 ## [0.7.0] - 2026-10-23
 
 ### Added
@@ -269,6 +285,7 @@ First release.
   Docker Compose deployment.
 - Apache-2.0.
 
+[0.7.1]: https://github.com/pan-dolina/inletbox/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/pan-dolina/inletbox/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/pan-dolina/inletbox/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/pan-dolina/inletbox/compare/v0.6.1...v0.6.2
