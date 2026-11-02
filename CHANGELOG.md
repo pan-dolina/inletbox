@@ -10,6 +10,13 @@ The section for a version is what ends up in its
 reads it from this file, refuses to publish a tag that has no section here, and rewrites
 a published release's notes whenever its section changes on `main`.
 
+## [0.7.2] - 2026-11-02
+
+### Changed
+
+- Dependency updates: `express-rate-limit` 8.7.2, the AWS SDK used for S3 storage to 3.1160,
+  `@tus/s3-store` 2.0.9, plus `@types/node`. Nothing changes for operators or link holders.
+
 ## [0.7.1] - 2026-10-26
 
 ### Security
@@ -285,6 +292,7 @@ First release.
   Docker Compose deployment.
 - Apache-2.0.
 
+[0.7.2]: https://github.com/pan-dolina/inletbox/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/pan-dolina/inletbox/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/pan-dolina/inletbox/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/pan-dolina/inletbox/compare/v0.6.2...v0.6.3
