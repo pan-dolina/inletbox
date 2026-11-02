@@ -20,21 +20,21 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1156.0",
-    "@aws-sdk/lib-storage": "^3.1156.0",
+    "@aws-sdk/client-s3": "^3.1160.0",
+    "@aws-sdk/lib-storage": "^3.1160.0",
     "@tus/file-store": "^2.1.1",
-    "@tus/s3-store": "^2.0.8",
+    "@tus/s3-store": "^2.0.9",
     "@tus/server": "^2.4.6",
     "content-disposition": "^3.0.0",
     "express": "^5.3.0",
-    "express-rate-limit": "^8.7.1",
+    "express-rate-limit": "^8.7.2",
     "helmet": "^8.1.0",
     "qrcode": "^1.5.4",
     "tus-js-client": "^4.3.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/qrcode": "^1.5.6",
     "@vitest/coverage-v8": "^5.0.5",
     "tsx": "^4.23.15",
