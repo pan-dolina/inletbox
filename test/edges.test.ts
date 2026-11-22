@@ -5,6 +5,7 @@
  * message, a stack trace or a token into a response or a log line.
  */
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -68,6 +69,26 @@ describe('logger', () => {
     const errLine = JSON.parse(err.trim().split('\n').at(-1)!);
     expect(errLine.err).toEqual({ name: 'Error', message: 'cannot read /u/[redacted]' });
     expect(errLine.err).not.toHaveProperty('stack');
+  });
+
+  it('logs a request whose connection goes away before the response', async () => {
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => {});
+    const info = vi.spyOn(log, 'info').mockImplementation(() => {});
+    const { hostname, port } = new URL(app.base);
+    // Announces a body it never finishes sending, then hangs up: what a proxy giving up
+    // on a slow upload looks like from here. No response, so no 'finish', ever.
+    const sock = net.connect(Number(port), hostname);
+    await new Promise<void>((resolve) => sock.once('connect', () => resolve()));
+    sock.write('POST /admin/login HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 500\r\n\r\nusername=a');
+    await new Promise((r) => setTimeout(r, 50));
+    sock.destroy();
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('request aborted', expect.objectContaining({ method: 'POST', path: '/admin/login', ms: expect.any(Number) })));
+    expect(info.mock.calls.filter(([m, f]) => m === 'request' && (f as { path?: string }).path === '/admin/login')).toEqual([]);
+    // A completed request is logged once, as before, and not also as aborted.
+    warn.mockClear();
+    await fetch(`${app.base}/healthz`);
+    await vi.waitFor(() => expect(info).toHaveBeenCalledWith('request', expect.objectContaining({ path: '/healthz', status: 200 })));
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('suppresses anything below the configured level', () => {

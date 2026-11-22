@@ -48,9 +48,15 @@ export function requestLogger(): RequestHandler {
     const ip = req.ip; // resolve now: the socket may be gone by the time the response finishes
     const method = req.method;
     const path = redact(req.path);
+    const elapsed = () => Math.round(Number(process.hrtime.bigint() - started) / 1e6);
     res.on('finish', () => {
-      const ms = Number(process.hrtime.bigint() - started) / 1e6;
-      log.info('request', { method, path, status: res.statusCode, ms: Math.round(ms), ip });
+      log.info('request', { method, path, status: res.statusCode, ms: elapsed(), ip });
+    });
+    // A connection that goes away before the response is complete (a client or proxy
+    // giving up mid-upload) never emits 'finish'; without this it leaves no trace at all.
+    res.on('close', () => {
+      if (res.writableFinished) return;
+      log.warn('request aborted', { method, path, status: res.headersSent ? res.statusCode : 0, ms: elapsed(), ip });
     });
     next();
   };
